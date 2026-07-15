@@ -82,6 +82,24 @@ export async function nutrition() {
           el('span', {}, `${sloticons[slot]} ${slot}`),
           el('div', { class: 'flex' },
             slotcal > 0 && el('span', { class: 'dim', style: 'font-size:12px' }, `${fmt.num(slotcal)} kcal`),
+            inslot.length > 0 && el('button', {
+              class: 'icon-btn', title: 'save as recipe',
+              onclick: () => saverecipe(slot, inslot),
+            }, '★'),
+            el('button', {
+              class: 'icon-btn', title: `copy yesterday's ${slot}`,
+              onclick: async () => {
+                const d = new Date(date)
+                d.setDate(d.getDate() - 1)
+                try {
+                  const res = await api.post('/api/meals/copy', { from: d.toISOString().slice(0, 10), date, slot })
+                  toast(`copied ${res.copied} from yesterday`)
+                  load()
+                } catch (err) {
+                  toast(err.message, 'error')
+                }
+              },
+            }, '↻'),
             el('button', { class: 'btn sm', onclick: () => addfood(slot) }, '+ add'))),
         inslot.length
           ? el('div', { class: 'list' }, ...inslot.map(m =>
@@ -104,8 +122,39 @@ export async function nutrition() {
     return wrap
   }
 
+  function saverecipe(slot, inslot) {
+    modal((box, close) => {
+      const name = el('input', { class: 'input', placeholder: `e.g. my usual ${slot}` })
+      box.append(
+        el('h3', {}, 'save as recipe'),
+        el('p', { class: 'muted mb-16', style: 'font-size:13.5px' },
+          `saves these ${inslot.length} food${inslot.length > 1 ? 's' : ''} as a one-tap preset in the food picker.`),
+        el('div', { class: 'field' }, el('label', {}, 'recipe name'), name),
+        el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn ghost', onclick: () => close() }, 'cancel'),
+          el('button', {
+            class: 'btn primary', onclick: async () => {
+              try {
+                await api.post('/api/recipes', {
+                  name: name.value.trim() || `${slot} preset`,
+                  items: inslot.map(m => ({ food_id: m.food_id, qty: m.qty })),
+                })
+                close()
+                toast('recipe saved')
+              } catch (err) {
+                toast(err.message, 'error')
+              }
+            },
+          }, 'save')))
+      setTimeout(() => name.focus(), 50)
+    })
+  }
+
   async function addfood(slot) {
-    const { foods } = await api.get('/api/foods')
+    const [{ foods }, { recipes }] = await Promise.all([
+      api.get('/api/foods'),
+      api.get('/api/recipes').catch(() => ({ recipes: [] })),
+    ])
     modal((box, close) => {
       const list = el('div', { class: 'list', style: 'max-height:40vh;overflow-y:auto' })
       const search = el('input', {
@@ -176,7 +225,35 @@ export async function nutrition() {
       }
 
       draw()
-      box.append(el('h3', {}, `add to ${slot}`), search, list)
+      const recipebox = recipes.length
+        ? el('div', { class: 'mb-16' },
+            el('label', { style: 'font-size:13px;font-weight:600;color:var(--muted);display:block;margin-bottom:8px' }, 'recipes'),
+            el('div', { class: 'flex wrap' }, ...recipes.map(r =>
+              el('span', { class: 'chip', title: r.data.map(x => x.name).join(', ') },
+                el('span', {
+                  style: 'cursor:pointer',
+                  onclick: async () => {
+                    try {
+                      const res = await api.post(`/api/recipes/${r.id}/log`, { slot, date })
+                      close()
+                      toast(`${r.name} logged (${res.logged} foods)`)
+                      load()
+                    } catch (err) {
+                      toast(err.message, 'error')
+                    }
+                  },
+                }, `★ ${r.name}`),
+                el('span', {
+                  style: 'cursor:pointer;margin-left:4px;opacity:0.6', title: 'delete recipe',
+                  onclick: async e => {
+                    e.stopPropagation()
+                    await api.delete(`/api/recipes/${r.id}`)
+                    e.target.closest('.chip').remove()
+                    toast('recipe deleted')
+                  },
+                }, '✕')))))
+        : ''
+      box.append(el('h3', {}, `add to ${slot}`), recipebox, search, list)
       setTimeout(() => search.focus(), 50)
     })
   }

@@ -1,6 +1,9 @@
 import { store } from './store.js'
 import { el, toast } from './ui.js'
-import { flushqueue, queued } from './api.js'
+import { api, flushqueue, queued } from './api.js'
+
+const theme = localStorage.getItem('fitnation_theme')
+if (theme) document.documentElement.dataset.theme = theme
 import { landing } from './pages/landing.js'
 import { authpage } from './pages/auth.js'
 import { dashboard } from './pages/dashboard.js'
@@ -98,6 +101,30 @@ addEventListener('online', async () => {
   if (n) {
     toast(`back online. synced ${n} queued ${n === 1 ? 'entry' : 'entries'}`)
     render()
+  }
+})
+
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const t = e.target
+  if (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return
+  if (!store.authed || document.querySelector('.modal-overlay')) return
+  if (e.key === 'n') {
+    e.preventDefault()
+    api.post('/api/workouts', { name: 'workout' })
+      .then(res => { location.hash = `#/workouts/${res.workout.id}` })
+  } else if (e.key === '/') {
+    e.preventDefault()
+    const search = document.querySelector('input[placeholder^="search"]')
+    if (search) {
+      search.focus()
+    } else {
+      location.hash = '#/exercises'
+      setTimeout(() => {
+        const s = document.querySelector('input[placeholder^="search"]')
+        if (s) s.focus()
+      }, 450)
+    }
   }
 })
 

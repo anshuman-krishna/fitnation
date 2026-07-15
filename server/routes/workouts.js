@@ -65,11 +65,12 @@ module.exports = app => {
     const workout = db.prepare('select id from workouts where id = ? and user_id = ?')
       .get(req.params.id, req.user.id)
     if (!workout) return res.json(404, { error: 'workout not found' })
-    const { exercise_id, weight, reps, rpe } = req.body
+    const { exercise_id, weight, reps, rpe, superset } = req.body
     const exercise = db.prepare('select id from exercises where id = ?').get(exercise_id)
     if (!exercise) return res.json(400, { error: 'invalid exercise' })
-    const info = db.prepare('insert into sets (workout_id, exercise_id, weight, reps, rpe) values (?, ?, ?, ?, ?)')
-      .run(workout.id, exercise_id, +weight || 0, +reps || 0, rpe != null ? +rpe : null)
+    const info = db.prepare('insert into sets (workout_id, exercise_id, weight, reps, rpe, superset) values (?, ?, ?, ?, ?, ?)')
+      .run(workout.id, exercise_id, +weight || 0, +reps || 0, rpe != null ? +rpe : null,
+        superset != null ? +superset : null)
     const set = db.prepare(`
       select s.*, e.name as exercise_name, e.muscle
       from sets s join exercises e on e.id = s.exercise_id where s.id = ?

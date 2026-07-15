@@ -1,14 +1,15 @@
 const base = ''
 const queuekey = 'fitnation_queue'
-const queueable = [/^\/api\/water$/, /^\/api\/meals$/, /^\/api\/weights$/, /^\/api\/workouts\/\d+\/sets$/]
+const queueable = [/^\/api\/water$/, /^\/api\/meals$/, /^\/api\/weights$/, /^\/api\/measurements$/, /^\/api\/workouts\/\d+\/sets$/]
+const queueabledel = [/^\/api\/meals\/\d+$/, /^\/api\/weights\/\d+$/, /^\/api\/measurements\/\d+$/, /^\/api\/workouts\/\d+\/sets\/\d+$/]
 
 function token() {
   return localStorage.getItem('fitnation_token')
 }
 
-function enqueue(path, data) {
+function enqueue(method, path, data) {
   const q = JSON.parse(localStorage.getItem(queuekey) || '[]')
-  q.push({ path, data, at: Date.now() })
+  q.push({ method, path, data, at: Date.now() })
   localStorage.setItem(queuekey, JSON.stringify(q))
 }
 
@@ -21,7 +22,7 @@ export async function flushqueue() {
   let synced = 0
   while (q.length) {
     try {
-      await request('POST', q[0].path, q[0].data, false)
+      await request(q[0].method || 'POST', q[0].path, q[0].data, false)
       q.shift()
       synced++
       localStorage.setItem(queuekey, JSON.stringify(q))
@@ -47,8 +48,10 @@ async function request(method, path, data, mayqueue = true) {
   try {
     res = await fetch(base + path, opts)
   } catch {
-    if (mayqueue && method === 'POST' && queueable.some(rx => rx.test(path))) {
-      enqueue(path, data)
+    const canqueue = (method === 'POST' && queueable.some(rx => rx.test(path))) ||
+      (method === 'DELETE' && queueabledel.some(rx => rx.test(path)))
+    if (mayqueue && canqueue) {
+      enqueue(method, path, data)
       const err = new Error('offline. saved locally, will sync when you reconnect')
       err.network = true
       err.queued = true

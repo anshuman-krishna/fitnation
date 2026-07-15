@@ -53,6 +53,26 @@ module.exports = app => {
     res.json(201, { meal })
   })
 
+  app.post('/api/meals/copy', authed, (req, res) => {
+    const from = req.body.from
+    if (!from) return res.json(400, { error: 'source date required' })
+    const date = req.body.date || new Date().toISOString().slice(0, 10)
+    if (from === date) return res.json(400, { error: 'source and target dates are the same' })
+    const slots = ['breakfast', 'lunch', 'dinner', 'snack']
+    const slot = slots.includes(req.body.slot) ? req.body.slot : null
+    let sql = 'select food_id, qty, slot from meals where user_id = ? and date = ?'
+    const values = [req.user.id, from]
+    if (slot) {
+      sql += ' and slot = ?'
+      values.push(slot)
+    }
+    const rows = db.prepare(sql).all(...values)
+    if (!rows.length) return res.json(404, { error: 'nothing logged on that day' })
+    const ins = db.prepare('insert into meals (user_id, food_id, qty, slot, date) values (?, ?, ?, ?, ?)')
+    for (const r of rows) ins.run(req.user.id, r.food_id, r.qty, r.slot, date)
+    res.json(201, { copied: rows.length })
+  })
+
   app.delete('/api/meals/:id', authed, (req, res) => {
     const info = db.prepare('delete from meals where id = ? and user_id = ?')
       .run(req.params.id, req.user.id)

@@ -90,7 +90,25 @@ create table if not exists templates (
   created text not null default (datetime('now'))
 );
 
+create table if not exists measurements (
+  id integer primary key autoincrement,
+  user_id integer not null references users(id) on delete cascade,
+  kind text not null,
+  value real not null,
+  date text not null default (date('now'))
+);
+
+create table if not exists recipes (
+  id integer primary key autoincrement,
+  user_id integer not null references users(id) on delete cascade,
+  name text not null,
+  data text not null default '[]',
+  created text not null default (datetime('now'))
+);
+
 create index if not exists idx_templates_user on templates(user_id);
+create index if not exists idx_measurements_user on measurements(user_id, kind, date);
+create index if not exists idx_recipes_user on recipes(user_id);
 create index if not exists idx_workouts_user on workouts(user_id, started);
 create index if not exists idx_sets_workout on sets(workout_id);
 create index if not exists idx_meals_user on meals(user_id, date);
@@ -101,6 +119,7 @@ create index if not exists idx_weights_user on weights(user_id, date);
 for (const ddl of [
   'alter table workouts add column template_id integer',
   'alter table exercises add column user_id integer',
+  'alter table sets add column superset integer',
 ]) {
   try { db.exec(ddl) } catch {}
 }

@@ -2,9 +2,27 @@ import { el, fmt, spinner, empty, toast, modal } from '../ui.js'
 import { api } from '../api.js'
 import { store } from '../store.js'
 import { linechart, barchart, donut } from '../charts.js'
-import { wtunit, showwt, inkg } from '../units.js'
+import { wtunit, showwt, inkg, lenunit, showlen, incm } from '../units.js'
 
 const musclecolors = ['var(--volt)', 'var(--sky)', 'var(--rose)', 'var(--violet)', 'var(--amber)', 'var(--ember)', 'var(--success)']
+
+function lastdays(n) {
+  const out = []
+  const d = new Date()
+  d.setDate(d.getDate() - (n - 1))
+  for (let i = 0; i < n; i++) {
+    out.push(d.toISOString().slice(0, 10))
+    d.setDate(d.getDate() + 1)
+  }
+  return out
+}
+
+function rolling(values, win = 7) {
+  return values.map((_, i) => {
+    const s = values.slice(Math.max(0, i - win + 1), i + 1)
+    return s.reduce((a, b) => a + b, 0) / s.length
+  })
+}
 
 export async function progress() {
   const user = store.user || {}
@@ -22,15 +40,16 @@ export async function progress() {
   load()
   async function load() {
     try {
-      const [vol, muscles, cals, prs, weights, report] = await Promise.all([
+      const [vol, muscles, cals, prs, weights, report, me] = await Promise.all([
         api.get('/api/stats/volume?days=60'),
         api.get('/api/stats/muscles'),
         api.get('/api/stats/calories?days=14'),
         api.get('/api/stats/prs'),
         api.get('/api/weights'),
         api.get('/api/stats/report'),
+        api.get('/api/measurements'),
       ])
-      body.replaceChildren(build(vol.volume, muscles.muscles, cals.calories, prs.prs, weights.weights, report))
+      body.replaceChildren(build(vol.volume, muscles.muscles, cals.calories, prs.prs, weights.weights, report, me))
     } catch (err) {
       body.replaceChildren(empty('⚠️', err.message))
     }
@@ -78,16 +97,21 @@ export async function progress() {
         : el('p', { class: 'dim', style: 'margin-top:14px;font-size:13px' }, 'no new prs this week. chase one.'))
   }
 
-  function build(volume, muscles, calories, prs, weights, report) {
+  function build(volume, muscles, calories, prs, weights, report, me) {
     const wrap = el('div', {})
 
     wrap.append(reviewcard(report))
+
+    const volbydate = new Map(volume.map(v => [v.date, v.volume]))
+    const volpoints = lastdays(60).map(d => ({ label: fmt.date(d), value: Math.round(showwt(volbydate.get(d) || 0)) }))
 
     wrap.append(el('div', { class: 'grid cols-2 mb-16' },
       el('div', { class: 'card' },
         el('div', { class: 'card-title' }, 'training volume · last 60 days'),
         volume.length
-          ? linechart(volume.map(v => ({ label: fmt.date(v.date), value: Math.round(showwt(v.volume)) })), { unit: ` ${wtunit()}` })
+          ? el('div', {},
+              linechart(volpoints, { unit: ` ${wtunit()}`, avg: rolling(volpoints.map(p => p.value)) }),
+              el('p', { class: 'dim center', style: 'font-size:12px;margin-top:8px' }, 'dashed line = 7-day average'))
           : empty('📉', 'no training data yet.')),
       el('div', { class: 'card' },
         el('div', { class: 'card-title' }, 'bodyweight'),
@@ -110,16 +134,18 @@ export async function progress() {
       musclesplit.append(empty('🎯', 'train to see your split.'))
     }
 
+    const calbydate = new Map(calories.map(c => [c.date, c.cal]))
+    const calpoints = lastdays(14).map(d => ({
+      label: fmt.date(d), value: Math.round(calbydate.get(d) || 0),
+      highlight: (calbydate.get(d) || 0) > 0 && calbydate.get(d) <= (user.goal_cal || 2200),
+    }))
     const calcard = el('div', { class: 'card' },
       el('div', { class: 'card-title' }, 'calories · last 14 days'),
       calories.length
-        ? barchart(calories.map(c => ({
-            label: fmt.date(c.date), value: Math.round(c.cal),
-            highlight: c.cal <= (user.goal_cal || 2200),
-          })), { unit: ' kcal' })
+        ? barchart(calpoints, { unit: ' kcal', avg: rolling(calpoints.map(p => p.value)) })
         : empty('🍽', 'no meals logged yet.'),
       calories.length
-        ? el('p', { class: 'dim center', style: 'font-size:12px;margin-top:8px' }, 'green bars = on or under your calorie goal')
+        ? el('p', { class: 'dim center', style: 'font-size:12px;margin-top:8px' }, 'green bars = on or under your calorie goal · dashed line = 7-day average')
         : '')
 
     wrap.append(el('div', { class: 'grid cols-2 mb-16' }, musclesplit, calcard))
@@ -145,7 +171,75 @@ export async function progress() {
     }
     wrap.append(prcard)
 
+    wrap.append(mecard(me.measurements, me.kinds))
+
     return wrap
+  }
+
+  function mecard(measurements, kinds) {
+    const card = el('div', { class: 'card mt-16' })
+    const present = [...new Set(measurements.map(m => m.kind))]
+    let selected = present[0] || null
+    const chartbox = el('div', {})
+
+    card.append(el('div', { class: 'card-title' },
+      el('span', {}, '📏 body measurements'),
+      el('button', { class: 'btn sm', onclick: () => logmeasure(kinds) }, '+ log')))
+
+    if (!present.length) {
+      card.append(empty('📏', 'track waist, chest, arms and more. tap + log.'))
+      return card
+    }
+
+    const chips = el('div', { class: 'flex wrap mb-16' })
+    function drawchips() {
+      chips.replaceChildren(...present.map(k =>
+        el('span', {
+          class: `chip ${k === selected ? 'active' : ''}`,
+          onclick: () => { selected = k; drawchips(); drawchart() },
+        }, k)))
+    }
+
+    function drawchart() {
+      const rows = measurements.filter(m => m.kind === selected).sort((a, b) => a.date < b.date ? -1 : 1)
+      const latest = rows[rows.length - 1]
+      chartbox.replaceChildren(
+        el('p', { style: 'font-size:13.5px;margin-bottom:8px' },
+          el('b', {}, `${showlen(latest.value)} ${lenunit()}`),
+          el('span', { class: 'dim' }, ` latest · ${fmt.date(latest.date)}`)),
+        linechart(rows.map(m => ({ label: fmt.date(m.date), value: showlen(m.value) })),
+          { unit: ` ${lenunit()}`, color: 'var(--amber)', height: 170 }))
+    }
+
+    drawchips()
+    drawchart()
+    card.append(chips, chartbox)
+    return card
+  }
+
+  function logmeasure(kinds) {
+    modal((box, close) => {
+      const kind = el('select', { class: 'input' }, ...kinds.map(k => el('option', { value: k }, k)))
+      const value = el('input', { class: 'input', type: 'number', step: '0.1', min: '1', placeholder: lenunit() === 'in' ? '32.0' : '81.0' })
+      const date = el('input', { class: 'input', type: 'date', value: new Date().toISOString().slice(0, 10) })
+      box.append(
+        el('h3', {}, 'log measurement'),
+        el('div', { class: 'field' }, el('label', {}, 'where'), kind),
+        el('div', { class: 'field' }, el('label', {}, `value (${lenunit()})`), value),
+        el('div', { class: 'field' }, el('label', {}, 'date'), date),
+        el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn ghost', onclick: () => close() }, 'cancel'),
+          el('button', {
+            class: 'btn primary', onclick: async () => {
+              if (!+value.value) return toast('enter a value', 'error')
+              await api.post('/api/measurements', { kind: kind.value, value: incm(+value.value), date: date.value })
+              close()
+              toast('measurement logged')
+              load()
+            },
+          }, 'save')))
+      setTimeout(() => value.focus(), 50)
+    })
   }
 
   function logweight() {

@@ -15,25 +15,42 @@ start it, train.
 
 - **workout logging.** log every set, rep and kilo in seconds. live session
   timer, per-exercise history, automatic volume math while you train.
+- **progressive overload hints.** every exercise shows your top set from
+  last time, with a one-tap "try +2.5" nudge to beat it.
+- **supersets.** link exercises in the logger and they're grouped, saved,
+  and restored together.
+- **plate calculator.** tap the barbell icon on any exercise and see exactly
+  which plates to load per side.
 - **rest timer.** a countdown chip after every set (1:00 to 3:00, or off),
-  with a beep when it's time to go again.
-- **templates.** save any workout as a template and start it again with one
-  tap, exercises pre-loaded.
+  with a beep, a toast, and a browser notification if you've tabbed away.
+  set a different duration per exercise if you like.
+- **templates.** save any workout as a template, start it with one tap,
+  and edit it later: rename, reorder, add or remove exercises. one-tap
+  repeat on any past workout too.
 - **exercise library.** 60+ curated movements with muscle targets, equipment
   tags, difficulty ratings and coaching cues, plus front/back muscle
   diagrams. add your own custom exercises too.
 - **nutrition tracking.** a fast food database with macros per serving. log
   meals by slot and watch calories, protein, carbs and fat fill up live.
+  copy yesterday's meals per slot, or save a slot as a reusable recipe and
+  log the whole thing with one tap.
 - **hydration.** tap a cup, stay on target.
 - **progress analytics.** volume trends, bodyweight curves, muscle-split
   donuts, estimated one-rep maxes, a personal record board, training
-  streaks, and a week-in-review report.
+  streaks, 7-day rolling averages, and a week-in-review report.
+- **body measurements.** track waist, chest, arms and more, each with its
+  own chart.
 - **metric or imperial.** switch anytime in your profile. your data is
   stored canonically and converted on the fly.
+- **dark or light.** volt-on-black by default, a clean light theme one
+  toggle away.
+- **keyboard shortcuts.** press n to start a workout, / to search.
 - **your data is yours.** csv export of workouts, bodyweight and meals from
-  the profile page.
+  the profile page, csv import to restore them, and full account deletion
+  when you want out.
 - **installable pwa.** add it to your home screen. the app shell works
-  offline and quick logs made without a connection sync when you're back.
+  offline and quick logs (and deletes) made without a connection sync when
+  you're back.
 
 ## quick start
 
@@ -55,7 +72,7 @@ and troubleshooting.
 | database | sqlite via node:sqlite, wal mode |
 | auth | scrypt password hashing, hmac-signed tokens |
 | frontend | vanilla es modules, hash routing, svg charts |
-| styling | one css file, custom properties, dark volt theme |
+| styling | one css file, custom properties, dark + light themes |
 | dependencies | zero |
 
 ## project layout
@@ -73,9 +90,10 @@ data/       runtime sqlite database (gitignored)
 npm test
 ```
 
-20 integration tests spin up a real server on a throwaway database and
-drive the full api: auth, workouts, sets, templates, nutrition, stats,
-exports, and cross-user isolation.
+28 integration tests spin up a real server on a throwaway database and
+drive the full api: auth, workouts, sets, supersets, templates, nutrition,
+recipes, measurements, stats, exports, imports, account deletion, and
+cross-user isolation.
 
 ## license
 

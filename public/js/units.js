@@ -12,3 +12,9 @@ export const showwt = kg => {
 }
 
 export const inkg = v => imperial() ? v / factor : v
+
+export const lenunit = () => imperial() ? 'in' : 'cm'
+
+export const showlen = cm => Math.round((imperial() ? cm / 2.54 : cm) * 10) / 10
+
+export const incm = v => imperial() ? v * 2.54 : v

@@ -17,6 +17,8 @@ require('./routes/metrics')(app)
 require('./routes/stats')(app)
 require('./routes/templates')(app)
 require('./routes/export')(app)
+require('./routes/recipes')(app)
+require('./routes/import')(app)
 
 const publicdir = path.join(__dirname, '..', 'public')
 const mime = {

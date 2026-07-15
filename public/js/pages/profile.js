@@ -1,4 +1,4 @@
-import { el, toast } from '../ui.js'
+import { el, toast, modal } from '../ui.js'
 import { api, download } from '../api.js'
 import { store } from '../store.js'
 import { wtunit, showwt, inkg } from '../units.js'
@@ -96,6 +96,26 @@ export async function profile() {
       },
     }, 'change password'))
 
+  const themesel = el('select', {
+    class: 'input', style: 'max-width:220px',
+    onchange: e => {
+      if (e.target.value === 'light') {
+        document.documentElement.dataset.theme = 'light'
+        localStorage.setItem('fitnation_theme', 'light')
+      } else {
+        delete document.documentElement.dataset.theme
+        localStorage.removeItem('fitnation_theme')
+      }
+      toast('theme updated')
+    },
+  },
+    el('option', { value: 'dark', selected: localStorage.getItem('fitnation_theme') !== 'light' || null }, 'dark (default)'),
+    el('option', { value: 'light', selected: localStorage.getItem('fitnation_theme') === 'light' || null }, 'light'))
+
+  const appearance = el('div', { class: 'card mt-24' },
+    el('div', { class: 'card-title' }, 'appearance'),
+    el('div', { class: 'field' }, el('label', {}, 'theme (this device)'), themesel))
+
   const exports = el('div', { class: 'card mt-24' },
     el('div', { class: 'card-title' }, 'export your data'),
     el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'your data is yours. download it as csv anytime. weights are always exported in kg.'),
@@ -104,11 +124,66 @@ export async function profile() {
       el('button', { class: 'btn sm', onclick: () => download('/api/export/weights').catch(err => toast(err.message, 'error')) }, '⬇ bodyweight'),
       el('button', { class: 'btn sm', onclick: () => download('/api/export/meals').catch(err => toast(err.message, 'error')) }, '⬇ meals')))
 
-  const danger = el('div', { class: 'card mt-24' },
-    el('div', { class: 'card-title' }, 'session'),
-    el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'you\'re logged in on this device. logging out keeps all your data safe on the server.'),
-    el('button', { class: 'btn danger', onclick: () => store.logout() }, 'log out'))
+  function importbtn(label, endpoint, describe) {
+    const file = el('input', { type: 'file', accept: '.csv,text/csv', style: 'display:none' })
+    file.addEventListener('change', async () => {
+      const f = file.files[0]
+      if (!f) return
+      try {
+        const csv = await f.text()
+        const res = await api.post(endpoint, { csv })
+        toast(describe(res))
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+      file.value = ''
+    })
+    return el('span', {},
+      el('button', { class: 'btn sm', onclick: () => file.click() }, label), file)
+  }
 
-  page.append(identity, goals, save, security, exports, danger)
+  const imports = el('div', { class: 'card mt-24' },
+    el('div', { class: 'card-title' }, 'restore from csv'),
+    el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'import files exported from fitnation. already-imported rows are skipped, so re-importing is safe.'),
+    el('div', { class: 'flex wrap' },
+      importbtn('⬆ workouts', '/api/import/workouts', r => `imported ${r.workouts} workouts, ${r.sets} sets`),
+      importbtn('⬆ bodyweight', '/api/import/weights', r => `imported ${r.imported} weigh-ins`),
+      importbtn('⬆ meals', '/api/import/meals', r => `imported ${r.imported} meals`)))
+
+  function deleteaccount() {
+    modal((box, close) => {
+      const pw = el('input', { class: 'input', type: 'password', placeholder: 'your password', autocomplete: 'current-password' })
+      box.append(
+        el('h3', {}, 'delete account'),
+        el('p', { class: 'muted mb-16', style: 'font-size:13.5px' },
+          'this permanently deletes your account and every workout, set, meal, weigh-in, measurement, template and recipe. there is no undo. export your data first if you want to keep it.'),
+        el('div', { class: 'field' }, el('label', {}, 'confirm with your password'), pw),
+        el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn ghost', onclick: () => close() }, 'cancel'),
+          el('button', {
+            class: 'btn danger', onclick: async e => {
+              e.target.disabled = true
+              try {
+                await api.post('/api/auth/delete', { password: pw.value })
+                close()
+                store.logout()
+              } catch (err) {
+                toast(err.message, 'error')
+                e.target.disabled = false
+              }
+            },
+          }, 'delete everything')))
+      setTimeout(() => pw.focus(), 50)
+    })
+  }
+
+  const danger = el('div', { class: 'card mt-24' },
+    el('div', { class: 'card-title' }, 'session & account'),
+    el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'you\'re logged in on this device. logging out keeps all your data safe on the server.'),
+    el('div', { class: 'flex wrap' },
+      el('button', { class: 'btn', onclick: () => store.logout() }, 'log out'),
+      el('button', { class: 'btn danger', onclick: deleteaccount }, 'delete account…')))
+
+  page.append(identity, goals, save, appearance, security, exports, imports, danger)
   return page
 }

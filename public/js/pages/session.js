@@ -1,6 +1,6 @@
 import { el, fmt, spinner, empty, modal, toast } from '../ui.js'
 import { api } from '../api.js'
-import { wtunit, showwt, inkg } from '../units.js'
+import { wtunit, showwt, inkg, imperial } from '../units.js'
 
 export async function session(id) {
   const page = el('div', { class: 'page' })
@@ -11,19 +11,35 @@ export async function session(id) {
   let workout = null
   let sets = []
   let pending = []
+  let last = {}
+  const linkedto = new Map()
   let timer = null
   let restinterval = null
   let restleft = 0
   const restchip = el('span', { class: 'session-timer', style: 'display:none;background:rgba(86,184,255,0.14);color:var(--sky);cursor:pointer', title: 'tap to skip rest' })
   restchip.addEventListener('click', () => stoprest())
 
-  function restsecs() {
-    return +localStorage.getItem('fitnation_rest') || 90
+  function restmap() {
+    try {
+      return JSON.parse(localStorage.getItem('fitnation_rest_ex')) || {}
+    } catch {
+      return {}
+    }
   }
 
-  function startrest() {
-    const secs = restsecs()
+  function restsecs(exid) {
+    const map = restmap()
+    if (exid != null && map[exid] != null) return +map[exid]
+    const v = localStorage.getItem('fitnation_rest')
+    return v === null ? 90 : +v
+  }
+
+  function startrest(exid) {
+    const secs = restsecs(exid)
     if (!secs) return
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {})
+    }
     restleft = secs
     restchip.style.display = ''
     drawrest()
@@ -34,6 +50,11 @@ export async function session(id) {
         stoprest()
         beep()
         toast('rest over. next set 🔔', 'info')
+        if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification('rest over', { body: 'back to the bar. next set 🔔', icon: '/icon.svg' })
+          } catch {}
+        }
       } else {
         drawrest()
       }
@@ -70,16 +91,42 @@ export async function session(id) {
       const res = await api.get(`/api/workouts/${id}`)
       workout = res.workout
       sets = res.sets
+      linkedto.clear()
+      for (const s of sets) {
+        if (s.superset != null && s.superset !== s.exercise_id) linkedto.set(s.exercise_id, s.superset)
+      }
+      if (!sets.length && !pending.length) {
+        const stash = sessionStorage.getItem(`fitnation_pending_${id}`)
+        if (stash) {
+          try {
+            pending = JSON.parse(stash)
+          } catch {}
+        }
+      }
       if (workout.template_id && !sets.length && !pending.length) {
         try {
           const t = await api.get(`/api/templates/${workout.template_id}`)
           pending = t.template.data.map(x => ({ id: x.id, name: x.name, muscle: x.muscle }))
         } catch {}
       }
+      await loadhints()
       renderhead()
       renderbody()
     } catch (err) {
       body.replaceChildren(empty('⚠️', err.message))
+    }
+  }
+
+  async function loadhints() {
+    const ids = [...new Set([...sets.map(s => s.exercise_id), ...pending.map(p => p.id)])]
+    if (!ids.length) {
+      last = {}
+      return
+    }
+    try {
+      last = (await api.get(`/api/exercises/last?ids=${ids.join(',')}&exclude=${id}`)).last
+    } catch {
+      last = {}
     }
   }
 
@@ -181,7 +228,8 @@ export async function session(id) {
 
     if (!groups.size) wrap.append(empty('🎯', 'no sets yet. add an exercise to get moving.'))
 
-    for (const [exid, group] of groups) wrap.append(block(exid, group))
+    const order = [...groups.keys()]
+    order.forEach((exid, i) => wrap.append(block(exid, groups.get(exid), i > 0 ? order[i - 1] : null)))
 
     wrap.append(el('button', { class: 'btn full lg mt-16', onclick: pickexercise }, '+ add exercise'))
     body.replaceChildren(wrap)
@@ -193,11 +241,62 @@ export async function session(id) {
       el('div', { class: 'value', style: 'font-size:22px' }, String(value)))
   }
 
-  function block(exid, group) {
-    const card = el('div', { class: 'card exercise-block' })
+  function togglelink(exid, prevexid) {
+    if (linkedto.has(exid)) linkedto.delete(exid)
+    else linkedto.set(exid, linkedto.get(prevexid) || prevexid)
+    renderbody()
+  }
+
+  function block(exid, group, prevexid) {
+    const linked = linkedto.has(exid)
+    const card = el('div', { class: `card exercise-block ${linked ? 'linked' : ''}` })
+    const exmap = restmap()
+
     card.append(el('div', { class: 'eb-head' },
-      el('h4', {}, group.name),
-      el('span', { class: 'muscle' }, group.muscle)))
+      el('div', { class: 'flex', style: 'gap:8px' },
+        el('h4', {}, group.name),
+        linked && el('span', { class: 'chip active', style: 'cursor:default;font-size:10.5px;padding:2px 8px' }, 'superset')),
+      el('div', { class: 'flex', style: 'gap:2px' },
+        el('span', { class: 'muscle', style: 'margin-right:6px' }, group.muscle),
+        prevexid != null && el('button', {
+          class: 'icon-btn', title: linked ? 'unlink superset' : 'superset with exercise above',
+          style: linked ? 'color:var(--volt)' : '',
+          onclick: () => togglelink(exid, prevexid),
+        }, '⛓'),
+        el('button', {
+          class: 'icon-btn', title: 'plate calculator',
+          onclick: () => platecalc(currentweight()),
+        }, '🏋'),
+        el('button', {
+          class: 'icon-btn', title: 'rest timer for this exercise',
+          style: exmap[exid] != null ? 'color:var(--sky)' : '',
+          onclick: () => exrest(exid, group.name),
+        }, '⏱'))))
+
+    const l = last[exid]
+    if (l) {
+      const bump = imperial() ? 5 : 2.5
+      const nudge = l.weight > 0
+        ? el('button', {
+            class: 'chip', title: 'fill in a small increase over last time',
+            onclick: () => {
+              w.value = Math.round((showwt(l.weight) + bump) * 10) / 10
+              r.value = l.reps
+              w.focus()
+            },
+          }, `try +${bump} ${wtunit()}`)
+        : el('button', {
+            class: 'chip', title: 'fill in one more rep than last time',
+            onclick: () => {
+              w.value = ''
+              r.value = l.reps + 1
+              r.focus()
+            },
+          }, 'try +1 rep')
+      card.append(el('div', { class: 'eb-hint' },
+        `last: ${l.weight > 0 ? `${showwt(l.weight)} ${wtunit()} × ` : ''}${l.reps} ${l.weight > 0 ? '' : 'reps '}· ${fmt.date(l.started)}`,
+        !workout.ended && nudge))
+    }
 
     card.append(el('div', { class: 'set-row' },
       el('span', {}), el('span', { class: 'col-h' }, wtunit()),
@@ -222,10 +321,14 @@ export async function session(id) {
         }, '✕')))
     })
 
-    const last = group.sets[group.sets.length - 1]
-    const w = el('input', { class: 'input', type: 'number', step: '0.5', min: '0', placeholder: wtunit(), value: last ? showwt(last.weight) : '' })
-    const r = el('input', { class: 'input', type: 'number', step: '1', min: '0', placeholder: 'reps', value: last ? last.reps : '' })
+    const lastset = group.sets[group.sets.length - 1]
+    const w = el('input', { class: 'input', type: 'number', step: '0.5', min: '0', placeholder: wtunit(), value: lastset ? showwt(lastset.weight) : '' })
+    const r = el('input', { class: 'input', type: 'number', step: '1', min: '0', placeholder: 'reps', value: lastset ? lastset.reps : '' })
     const rpe = el('input', { class: 'input', type: 'number', step: '0.5', min: '1', max: '10', placeholder: '–' })
+
+    function currentweight() {
+      return +w.value || (lastset ? showwt(lastset.weight) : (l && l.weight > 0 ? showwt(l.weight) : ''))
+    }
 
     async function addset() {
       if (workout.ended) return toast('workout is finished. start a new one to keep training', 'error')
@@ -233,11 +336,12 @@ export async function session(id) {
       const res = await api.post(`/api/workouts/${id}/sets`, {
         exercise_id: exid, weight: inkg(+w.value || 0), reps: +r.value || 0,
         rpe: rpe.value ? +rpe.value : null,
+        superset: linkedto.get(exid) ?? null,
       })
       sets.push(res.set)
       pending = pending.filter(p => p.id !== exid)
       if (sets.length === 1) renderhead()
-      startrest()
+      startrest(exid)
       renderbody()
     }
 
@@ -250,6 +354,83 @@ export async function session(id) {
       el('button', { class: 'icon-btn', style: 'color:var(--volt)', title: 'log set', onclick: addset }, '✓')))
 
     return card
+  }
+
+  function platecalc(initial) {
+    const imp = imperial()
+    const bars = imp ? [45, 35, 15] : [20, 15, 10]
+    const plates = imp ? [45, 35, 25, 10, 5, 2.5] : [25, 20, 15, 10, 5, 2.5, 1.25]
+    modal((box, close) => {
+      const target = el('input', { class: 'input', type: 'number', step: imp ? '5' : '2.5', min: '0', value: initial || '', oninput: calc })
+      const bar = el('select', { class: 'input', onchange: calc },
+        ...bars.map((b, i) => el('option', { value: b, selected: i === 0 || null }, `${b} ${wtunit()} bar`)))
+      const out = el('div', { class: 'mt-16' })
+
+      function calc() {
+        const t = +target.value
+        if (!t) {
+          out.replaceChildren(el('p', { class: 'dim', style: 'font-size:13.5px' }, 'enter a target weight.'))
+          return
+        }
+        let side = (t - +bar.value) / 2
+        if (side < 0) {
+          out.replaceChildren(el('p', { class: 'dim', style: 'font-size:13.5px' }, 'that is lighter than the bar.'))
+          return
+        }
+        const used = []
+        for (const p of plates) {
+          while (side >= p - 1e-9) {
+            used.push(p)
+            side -= p
+          }
+        }
+        const loaded = t - side * 2
+        out.replaceChildren(
+          el('p', { style: 'font-weight:700;font-size:14px;margin-bottom:10px' },
+            used.length ? `per side · ${fmt.num1(loaded)} ${wtunit()} total` : 'empty bar'),
+          el('div', { class: 'flex wrap' }, ...used.map(p => el('span', { class: 'plate' }, String(p)))),
+          side > 0.01
+            ? el('p', { class: 'dim mt-8', style: 'font-size:12.5px' }, `closest load below target. ${fmt.num1(side * 2)} ${wtunit()} short.`)
+            : '')
+      }
+
+      calc()
+      box.append(
+        el('h3', {}, 'plate calculator'),
+        el('div', { class: 'grid cols-2' },
+          el('div', { class: 'field' }, el('label', {}, `target (${wtunit()})`), target),
+          el('div', { class: 'field' }, el('label', {}, 'bar'), bar)),
+        out,
+        el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn ghost', onclick: () => close() }, 'close')))
+      setTimeout(() => target.focus(), 50)
+    })
+  }
+
+  function exrest(exid, name) {
+    const map = restmap()
+    modal((box, close) => {
+      const opts = [['', 'use default'], [0, 'off'], [60, '1:00'], [90, '1:30'], [120, '2:00'], [180, '3:00']]
+      const current = map[exid] != null ? String(map[exid]) : ''
+      const sel = el('select', { class: 'input' },
+        ...opts.map(([v, label]) => el('option', { value: v, selected: String(v) === current || null }, label)))
+      box.append(
+        el('h3', {}, `rest after ${name}`),
+        el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'overrides the workout-wide rest timer for this exercise only.'),
+        el('div', { class: 'field' }, el('label', {}, 'rest duration'), sel),
+        el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn ghost', onclick: () => close() }, 'cancel'),
+          el('button', {
+            class: 'btn primary', onclick: () => {
+              if (sel.value === '') delete map[exid]
+              else map[exid] = +sel.value
+              localStorage.setItem('fitnation_rest_ex', JSON.stringify(map))
+              close()
+              toast('rest updated')
+              renderbody()
+            },
+          }, 'save')))
+    })
   }
 
   async function pickexercise() {
@@ -266,10 +447,11 @@ export async function session(id) {
         list.replaceChildren(...matched.slice(0, 40).map(x =>
           el('div', {
             class: 'row-item interactive',
-            onclick: () => {
+            onclick: async () => {
               close()
               if (!pending.some(p => p.id === x.id) && !sets.some(s => s.exercise_id === x.id)) {
                 pending.push({ id: x.id, name: x.name, muscle: x.muscle })
+                await loadhints()
               }
               renderbody()
             },

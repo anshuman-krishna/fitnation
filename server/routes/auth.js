@@ -49,6 +49,17 @@ module.exports = app => {
     res.json(200, { ok: true })
   })
 
+  app.post('/api/auth/delete', authed, (req, res) => {
+    const user = db.prepare('select * from users where id = ?').get(req.user.id)
+    if (!user || !verify(req.body.password || '', user.password)) {
+      return res.json(401, { error: 'password is wrong' })
+    }
+    db.prepare('delete from users where id = ?').run(user.id)
+    db.prepare('delete from exercises where user_id = ? and id not in (select distinct exercise_id from sets)')
+      .run(user.id)
+    res.json(200, { ok: true })
+  })
+
   app.patch('/api/auth/me', authed, (req, res) => {
     const fields = ['name', 'goal_cal', 'goal_protein', 'goal_water', 'goal_weight', 'goal_workouts', 'units']
     const updates = []

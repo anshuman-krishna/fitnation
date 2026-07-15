@@ -44,6 +44,27 @@ module.exports = app => {
     res.json(201, { template: parse(t) })
   })
 
+  app.patch('/api/templates/:id', authed, (req, res) => {
+    const t = db.prepare('select * from templates where id = ? and user_id = ?')
+      .get(req.params.id, req.user.id)
+    if (!t) return res.json(404, { error: 'template not found' })
+    const name = req.body.name !== undefined ? (req.body.name || '').trim() : t.name
+    if (!name) return res.json(400, { error: 'name required' })
+    let data = JSON.parse(t.data)
+    if (Array.isArray(req.body.exercises)) {
+      if (!req.body.exercises.length) return res.json(400, { error: 'template needs at least one exercise' })
+      const marks = req.body.exercises.map(() => '?').join(',')
+      const rows = db.prepare(`select id, name, muscle from exercises where id in (${marks})`)
+        .all(...req.body.exercises.map(Number))
+      const byid = new Map(rows.map(r => [r.id, r]))
+      data = req.body.exercises.map(id => byid.get(+id)).filter(Boolean)
+      if (!data.length) return res.json(400, { error: 'template needs at least one exercise' })
+    }
+    db.prepare('update templates set name = ?, data = ? where id = ?')
+      .run(name, JSON.stringify(data), t.id)
+    res.json(200, { template: parse(db.prepare('select * from templates where id = ?').get(t.id)) })
+  })
+
   app.delete('/api/templates/:id', authed, (req, res) => {
     const info = db.prepare('delete from templates where id = ? and user_id = ?')
       .run(req.params.id, req.user.id)

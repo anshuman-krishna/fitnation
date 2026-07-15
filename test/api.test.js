@@ -235,3 +235,154 @@ test('serves pwa assets', async () => {
     assert.ok(res.headers.get('content-type').includes(type))
   }
 })
+
+test('edits a template', async () => {
+  const t = await req('POST', '/api/templates', { name: 'editable', exercises: [1, 2] })
+  assert.equal(t.status, 201)
+  const tid = t.data.template.id
+
+  const renamed = await req('PATCH', `/api/templates/${tid}`, { name: 'edited', exercises: [3, 1] })
+  assert.equal(renamed.status, 200)
+  assert.equal(renamed.data.template.name, 'edited')
+  assert.deepEqual(renamed.data.template.data.map(x => x.id), [3, 1])
+
+  const emptied = await req('PATCH', `/api/templates/${tid}`, { exercises: [] })
+  assert.equal(emptied.status, 400)
+
+  await req('DELETE', `/api/templates/${tid}`)
+})
+
+test('copies meals from another day', async () => {
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  await req('POST', '/api/meals', { food_id: 1, qty: 1, slot: 'breakfast', date: yesterday })
+
+  const r = await req('POST', '/api/meals/copy', { from: yesterday, slot: 'breakfast' })
+  assert.equal(r.status, 201)
+  assert.equal(r.data.copied, 1)
+
+  const nothing = await req('POST', '/api/meals/copy', { from: '2001-01-01' })
+  assert.equal(nothing.status, 404)
+
+  const sameday = await req('POST', '/api/meals/copy', { from: new Date().toISOString().slice(0, 10) })
+  assert.equal(sameday.status, 400)
+})
+
+test('saves and logs recipes', async () => {
+  const bad = await req('POST', '/api/recipes', { name: 'no foods', items: [] })
+  assert.equal(bad.status, 400)
+
+  const r = await req('POST', '/api/recipes', { name: 'breakfast bowl', items: [{ food_id: 1, qty: 2 }, { food_id: 2, qty: 1 }] })
+  assert.equal(r.status, 201)
+  assert.equal(r.data.recipe.data.length, 2)
+
+  const list = await req('GET', '/api/recipes')
+  assert.ok(list.data.recipes.some(x => x.id === r.data.recipe.id))
+
+  const logged = await req('POST', `/api/recipes/${r.data.recipe.id}/log`, { slot: 'breakfast' })
+  assert.equal(logged.status, 201)
+  assert.equal(logged.data.logged, 2)
+
+  const gone = await req('DELETE', `/api/recipes/${r.data.recipe.id}`)
+  assert.equal(gone.status, 200)
+})
+
+test('tracks body measurements', async () => {
+  const bad = await req('POST', '/api/measurements', { kind: 'ear', value: 10 })
+  assert.equal(bad.status, 400)
+
+  const r = await req('POST', '/api/measurements', { kind: 'waist', value: 82.5 })
+  assert.equal(r.status, 201)
+
+  const upserted = await req('POST', '/api/measurements', { kind: 'waist', value: 82.0 })
+  assert.equal(upserted.status, 201)
+
+  const list = await req('GET', '/api/measurements?kind=waist')
+  assert.equal(list.data.measurements.length, 1)
+  assert.equal(list.data.measurements[0].value, 82.0)
+
+  const del = await req('DELETE', `/api/measurements/${list.data.measurements[0].id}`)
+  assert.equal(del.status, 200)
+})
+
+test('reports last set per exercise for overload hints', async () => {
+  const w = await req('POST', '/api/workouts', { name: 'hint source' })
+  await req('POST', `/api/workouts/${w.data.workout.id}/sets`, { exercise_id: 1, weight: 120, reps: 3 })
+  await req('PATCH', `/api/workouts/${w.data.workout.id}`, { finish: true })
+
+  const current = await req('POST', '/api/workouts', { name: 'hint target' })
+  const r = await req('GET', `/api/exercises/last?ids=1,2&exclude=${current.data.workout.id}`)
+  assert.equal(r.status, 200)
+  assert.equal(r.data.last[1].weight, 120)
+  assert.equal(r.data.last[1].reps, 3)
+
+  await req('DELETE', `/api/workouts/${current.data.workout.id}`)
+})
+
+test('stores superset grouping on sets', async () => {
+  const w = await req('POST', '/api/workouts', { name: 'superset day' })
+  const wid = w.data.workout.id
+  await req('POST', `/api/workouts/${wid}/sets`, { exercise_id: 1, weight: 60, reps: 10 })
+  const s2 = await req('POST', `/api/workouts/${wid}/sets`, { exercise_id: 2, weight: 40, reps: 12, superset: 1 })
+  assert.equal(s2.data.set.superset, 1)
+
+  const detail = await req('GET', `/api/workouts/${wid}`)
+  assert.equal(detail.data.sets.find(s => s.exercise_id === 2).superset, 1)
+  await req('DELETE', `/api/workouts/${wid}`)
+})
+
+test('imports exported csv round trip', async () => {
+  const workouts = await fetch(`${base}/api/export/workouts`, { headers: { authorization: `Bearer ${token}` } })
+  const wcsv = await workouts.text()
+  const weights = await fetch(`${base}/api/export/weights`, { headers: { authorization: `Bearer ${token}` } })
+  const kgcsv = await weights.text()
+  const meals = await fetch(`${base}/api/export/meals`, { headers: { authorization: `Bearer ${token}` } })
+  const mcsv = await meals.text()
+
+  const fresh = await req('POST', '/api/auth/register', {
+    email: `restore${Date.now()}@fit.test`, password: 'secret1', name: 'restorer',
+  }, false)
+  const old = token
+  token = fresh.data.token
+
+  const iw = await req('POST', '/api/import/workouts', { csv: wcsv })
+  assert.equal(iw.status, 201)
+  assert.ok(iw.data.workouts >= 1)
+  assert.ok(iw.data.sets >= 1)
+
+  const again = await req('POST', '/api/import/workouts', { csv: wcsv })
+  assert.equal(again.data.workouts, 0)
+
+  const ik = await req('POST', '/api/import/weights', { csv: kgcsv })
+  assert.equal(ik.status, 201)
+  assert.ok(ik.data.imported >= 1)
+
+  const im = await req('POST', '/api/import/meals', { csv: mcsv })
+  assert.equal(im.status, 201)
+  assert.ok(im.data.imported >= 1)
+
+  const bad = await req('POST', '/api/import/weights', { csv: 'not,a\nvalid,file' })
+  assert.equal(bad.status, 400)
+
+  const mine = await req('GET', '/api/workouts')
+  assert.ok(mine.data.total >= 1)
+  token = old
+})
+
+test('deletes an account and everything in it', async () => {
+  const email = `bye${Date.now()}@fit.test`
+  const reg = await req('POST', '/api/auth/register', { email, password: 'secret1', name: 'leaver' }, false)
+  const old = token
+  token = reg.data.token
+  const w = await req('POST', '/api/workouts', { name: 'final workout' })
+  await req('POST', `/api/workouts/${w.data.workout.id}/sets`, { exercise_id: 1, weight: 50, reps: 5 })
+
+  const wrong = await req('POST', '/api/auth/delete', { password: 'nope' })
+  assert.equal(wrong.status, 401)
+
+  const del = await req('POST', '/api/auth/delete', { password: 'secret1' })
+  assert.equal(del.status, 200)
+
+  const login = await req('POST', '/api/auth/login', { email, password: 'secret1' }, false)
+  assert.equal(login.status, 401)
+  token = old
+})

@@ -38,7 +38,7 @@ application > service workers and tick "update on reload" while developing.
 npm test
 ```
 
-20 integration tests. they spawn a real server on port 4699 with an
+28 integration tests. they spawn a real server on port 4699 with an
 isolated database (`data/test.db`), so they never touch your real data.
 takes under half a second.
 

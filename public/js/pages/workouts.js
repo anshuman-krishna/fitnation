@@ -1,4 +1,4 @@
-import { el, fmt, spinner, empty, confirmdialog, toast } from '../ui.js'
+import { el, fmt, spinner, empty, confirmdialog, modal, toast } from '../ui.js'
 import { api } from '../api.js'
 import { wtunit, showwt } from '../units.js'
 
@@ -43,6 +43,7 @@ export async function workouts() {
                 el('div', { style: 'font-weight:700;font-size:14px' }, t.name),
                 el('div', { class: 'meta muted', style: 'font-size:12.5px;margin-top:2px' },
                   t.data.map(x => x.name).slice(0, 3).join(', ') + (t.data.length > 3 ? ` +${t.data.length - 3}` : ''))),
+              el('button', { class: 'icon-btn', title: 'edit template', onclick: () => edittemplate(t) }, '✎'),
               el('button', {
                 class: 'icon-btn danger', title: 'delete template',
                 onclick: () => confirmdialog(`template "${t.name}" will be removed.`, async () => {
@@ -60,6 +61,99 @@ export async function workouts() {
     } catch {
       templatebox.replaceChildren()
     }
+  }
+
+  function edittemplate(t) {
+    modal(async (box, close) => {
+      const name = el('input', { class: 'input', value: t.name })
+      let list = [...t.data]
+      let exercises = []
+      const listbox = el('div', { class: 'list mb-16' })
+
+      function draw() {
+        listbox.replaceChildren(...list.map((x, i) =>
+          el('div', { class: 'row-item' },
+            el('div', { class: 'grow' },
+              el('div', { class: 'title' }, x.name),
+              el('div', { class: 'meta' }, x.muscle)),
+            el('button', {
+              class: 'icon-btn', title: 'move up', disabled: i === 0 || null,
+              onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; draw() },
+            }, '↑'),
+            el('button', {
+              class: 'icon-btn', title: 'move down', disabled: i === list.length - 1 || null,
+              onclick: () => { [list[i], list[i + 1]] = [list[i + 1], list[i]]; draw() },
+            }, '↓'),
+            el('button', {
+              class: 'icon-btn danger', title: 'remove',
+              onclick: () => { list.splice(i, 1); draw() },
+            }, '✕'))))
+        if (!list.length) listbox.replaceChildren(el('p', { class: 'dim', style: 'font-size:13px' }, 'no exercises left. add at least one.'))
+      }
+
+      const results = el('div', { class: 'list mb-16' })
+      const search = el('input', {
+        class: 'input', placeholder: 'add exercise…',
+        oninput: () => {
+          const q = search.value.toLowerCase().trim()
+          if (!q) return results.replaceChildren()
+          const matched = exercises.filter(x =>
+            (x.name.includes(q) || x.muscle.includes(q)) && !list.some(y => y.id === x.id))
+          results.replaceChildren(...matched.slice(0, 5).map(x =>
+            el('div', {
+              class: 'row-item interactive',
+              onclick: () => {
+                list.push({ id: x.id, name: x.name, muscle: x.muscle })
+                search.value = ''
+                results.replaceChildren()
+                draw()
+              },
+            },
+              el('div', { class: 'grow' },
+                el('div', { class: 'title' }, x.name),
+                el('div', { class: 'meta' }, x.muscle)))))
+        },
+      })
+
+      draw()
+      box.append(
+        el('h3', {}, 'edit template'),
+        el('div', { class: 'field' }, el('label', {}, 'name'), name),
+        listbox,
+        el('div', { class: 'field' }, el('label', {}, 'add exercise'), search),
+        results,
+        el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn ghost', onclick: () => close() }, 'cancel'),
+          el('button', {
+            class: 'btn primary', onclick: async () => {
+              if (!list.length) return toast('template needs at least one exercise', 'error')
+              try {
+                await api.patch(`/api/templates/${t.id}`, {
+                  name: name.value.trim() || t.name,
+                  exercises: list.map(x => x.id),
+                })
+                close()
+                toast('template updated')
+                loadtemplates()
+              } catch (err) {
+                toast(err.message, 'error')
+              }
+            },
+          }, 'save')))
+
+      exercises = (await api.get('/api/exercises')).exercises
+    })
+  }
+
+  async function repeat(w) {
+    const detail = await api.get(`/api/workouts/${w.id}`)
+    const seen = new Map()
+    for (const s of detail.sets) {
+      if (!seen.has(s.exercise_id)) seen.set(s.exercise_id, { id: s.exercise_id, name: s.exercise_name, muscle: s.muscle })
+    }
+    const res = await api.post('/api/workouts', { name: w.name })
+    if (seen.size) sessionStorage.setItem(`fitnation_pending_${res.workout.id}`, JSON.stringify([...seen.values()]))
+    location.hash = `#/workouts/${res.workout.id}`
   }
 
   async function load() {
@@ -111,6 +205,10 @@ export async function workouts() {
         el('div', { class: 'meta' },
           `${fmt.datetime(w.started)} · ${w.exercise_count} exercises · ${w.set_count} sets${duration ? ` · ${duration}` : ''}`)),
       el('div', { class: 'num volt' }, `${fmt.num(showwt(w.volume))} ${wtunit()}`),
+      el('button', {
+        class: 'icon-btn', title: 'repeat this workout',
+        onclick: e => { e.stopPropagation(); repeat(w) },
+      }, '↻'),
       el('button', {
         class: 'icon-btn danger', title: 'delete workout',
         onclick: e => {

@@ -23,7 +23,7 @@ function hidetip() {
   if (tip) tip.style.display = 'none'
 }
 
-export function linechart(points, { color = 'var(--volt)', height = 200, unit = '', fill = true, ylabel = v => v } = {}) {
+export function linechart(points, { color = 'var(--volt)', height = 200, unit = '', fill = true, ylabel = v => v, avg = null } = {}) {
   const box = el('div', { class: 'chart-box' })
   if (!points.length) return box
   const w = 600
@@ -74,6 +74,14 @@ export function linechart(points, { color = 'var(--volt)', height = 200, unit = 
   })
   svg.append(path)
 
+  if (avg && avg.length === points.length && points.length > 1) {
+    const d = avg.map((v, i) => `${i === 0 ? 'M' : 'L'} ${px(i).toFixed(1)} ${py(v).toFixed(1)}`).join(' ')
+    svg.append(svgel('path', {
+      d, fill: 'none', stroke: 'var(--muted)', 'stroke-width': 1.8,
+      'stroke-dasharray': '5 5', opacity: 0.9,
+    }))
+  }
+
   points.forEach((p, i) => {
     const dot = svgel('circle', {
       cx: px(i), cy: py(p.value), r: points.length > 40 ? 2 : 3.5,
@@ -99,7 +107,7 @@ export function linechart(points, { color = 'var(--volt)', height = 200, unit = 
   return box
 }
 
-export function barchart(points, { color = 'var(--sky)', height = 200, unit = '' } = {}) {
+export function barchart(points, { color = 'var(--sky)', height = 200, unit = '', avg = null } = {}) {
   const box = el('div', { class: 'chart-box' })
   if (!points.length) return box
   const w = 600
@@ -130,6 +138,16 @@ export function barchart(points, { color = 'var(--sky)', height = 200, unit = ''
     bar.addEventListener('mouseleave', hidetip)
     svg.append(bar)
   })
+
+  if (avg && avg.length === points.length && points.length > 1) {
+    const ax = i => pad.l + ((i + 0.5) / points.length) * (w - pad.l - pad.r)
+    const ay = v => pad.t + (1 - v / max) * (h - pad.t - pad.b)
+    const d = avg.map((v, i) => `${i === 0 ? 'M' : 'L'} ${ax(i).toFixed(1)} ${ay(v).toFixed(1)}`).join(' ')
+    svg.append(svgel('path', {
+      d, fill: 'none', stroke: 'var(--muted)', 'stroke-width': 1.8,
+      'stroke-dasharray': '5 5', opacity: 0.9,
+    }))
+  }
 
   const step = Math.max(1, Math.ceil(points.length / 8))
   points.forEach((p, i) => {

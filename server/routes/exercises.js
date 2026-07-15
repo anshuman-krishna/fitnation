@@ -26,6 +26,24 @@ module.exports = app => {
     res.json(200, { exercises: rows })
   })
 
+  app.get('/api/exercises/last', authed, (req, res) => {
+    const ids = (req.query.ids || '').split(',').map(Number).filter(Boolean)
+    const exclude = +req.query.exclude || 0
+    const q = db.prepare(`
+      select s.weight, s.reps, w.started from sets s
+      join workouts w on w.id = s.workout_id
+      where s.exercise_id = ? and w.user_id = ? and w.id != ?
+      order by w.started desc, (s.weight * (1 + s.reps / 30.0)) desc
+      limit 1
+    `)
+    const last = {}
+    for (const id of ids.slice(0, 30)) {
+      const row = q.get(id, req.user.id, exclude)
+      if (row) last[id] = row
+    }
+    res.json(200, { last })
+  })
+
   app.post('/api/exercises', authed, (req, res) => {
     const name = (req.body.name || '').trim().toLowerCase()
     if (!name) return res.json(400, { error: 'name required' })
