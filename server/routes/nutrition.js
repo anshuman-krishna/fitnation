@@ -13,6 +13,43 @@ module.exports = app => {
     res.json(200, { foods: db.prepare(sql).all(...values) })
   })
 
+  app.get('/api/foods/search', authed, async (req, res) => {
+    const q = (req.query.q || '').trim()
+    if (!q) return res.json(400, { error: 'search query required' })
+    try {
+      const url = 'https://world.openfoodfacts.org/cgi/search.pl?action=process&json=1&search_simple=1&page_size=12' +
+        '&fields=product_name,brands,nutriments&search_terms=' + encodeURIComponent(q)
+      const r = await fetch(url, {
+        signal: AbortSignal.timeout(6000),
+        headers: { 'user-agent': 'fitnation/3.1 (personal fitness tracker)' },
+      })
+      if (!r.ok) throw new Error()
+      const data = await r.json()
+      const seen = new Set()
+      const results = []
+      for (const p of data.products || []) {
+        if (!p.product_name || !p.nutriments || p.nutriments['energy-kcal_100g'] == null) continue
+        const title = p.product_name.trim().toLowerCase()
+        const brand = (p.brands || '').split(',')[0].trim().toLowerCase()
+        const name = brand && brand !== title ? `${title} (${brand})` : title
+        if (seen.has(name)) continue
+        seen.add(name)
+        results.push({
+          name,
+          cal: Math.round(+p.nutriments['energy-kcal_100g'] || 0),
+          protein: Math.round((+p.nutriments.proteins_100g || 0) * 10) / 10,
+          carbs: Math.round((+p.nutriments.carbohydrates_100g || 0) * 10) / 10,
+          fat: Math.round((+p.nutriments.fat_100g || 0) * 10) / 10,
+          serving: '100 g',
+        })
+        if (results.length === 10) break
+      }
+      res.json(200, { results })
+    } catch {
+      res.json(502, { error: 'open food facts is unreachable right now' })
+    }
+  })
+
   app.post('/api/foods', authed, (req, res) => {
     const { name, cal, protein, carbs, fat, serving } = req.body
     if (!name || !name.trim()) return res.json(400, { error: 'name required' })

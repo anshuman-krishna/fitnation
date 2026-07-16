@@ -38,7 +38,7 @@ application > service workers and tick "update on reload" while developing.
 npm test
 ```
 
-28 integration tests. they spawn a real server on port 4699 with an
+31 integration tests. they spawn a real server on port 4699 with an
 isolated database (`data/test.db`), so they never touch your real data.
 takes under half a second.
 
@@ -83,6 +83,11 @@ all existing tokens. just log in again.
 
 **blank page after an update**
 stale service worker cache. hard-refresh, or clear site data in devtools.
+
+**"open food facts is unreachable right now"**
+the food picker's online search proxies openfoodfacts.org through the
+server. it needs an internet connection and gives up after 6 seconds;
+everything else in the app works fully offline from your local database.
 
 ## a note on deployment
 

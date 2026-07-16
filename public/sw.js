@@ -1,8 +1,8 @@
-const version = 'fitnation-v4'
+const version = 'fitnation-v5'
 const core = [
   '/', '/css/main.css', '/manifest.json', '/icon.svg',
   '/js/app.js', '/js/api.js', '/js/store.js', '/js/ui.js', '/js/charts.js',
-  '/js/units.js', '/js/anatomy.js',
+  '/js/units.js', '/js/anatomy.js', '/js/share.js',
   '/js/pages/landing.js', '/js/pages/auth.js', '/js/pages/dashboard.js',
   '/js/pages/workouts.js', '/js/pages/session.js', '/js/pages/exercises.js',
   '/js/pages/nutrition.js', '/js/pages/progress.js', '/js/pages/profile.js',

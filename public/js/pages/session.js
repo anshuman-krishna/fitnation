@@ -1,6 +1,7 @@
 import { el, fmt, spinner, empty, modal, toast } from '../ui.js'
 import { api } from '../api.js'
 import { wtunit, showwt, inkg, imperial } from '../units.js'
+import { sharecard } from '../share.js'
 
 export async function session(id) {
   const page = el('div', { class: 'page' })
@@ -172,6 +173,10 @@ export async function session(id) {
         live && restpick,
         timerbox,
         sets.length > 0 && el('button', { class: 'btn sm', onclick: savetemplate }, 'save as template'),
+        !live && sets.length > 0 && el('button', {
+          class: 'btn sm', title: 'share this workout as an image',
+          onclick: () => sharecard(workout, sets),
+        }, '⇪ share'),
         live
           ? el('button', {
               class: 'btn primary', onclick: async () => {
@@ -258,6 +263,10 @@ export async function session(id) {
         linked && el('span', { class: 'chip active', style: 'cursor:default;font-size:10.5px;padding:2px 8px' }, 'superset')),
       el('div', { class: 'flex', style: 'gap:2px' },
         el('span', { class: 'muscle', style: 'margin-right:6px' }, group.muscle),
+        !group.sets.length && !workout.ended && el('button', {
+          class: 'icon-btn', title: 'swap for a similar exercise',
+          onclick: () => swap(exid, group.name),
+        }, '⇄'),
         prevexid != null && el('button', {
           class: 'icon-btn', title: linked ? 'unlink superset' : 'superset with exercise above',
           style: linked ? 'color:var(--volt)' : '',
@@ -354,6 +363,37 @@ export async function session(id) {
       el('button', { class: 'icon-btn', style: 'color:var(--volt)', title: 'log set', onclick: addset }, '✓')))
 
     return card
+  }
+
+  async function swap(exid, name) {
+    const { similar } = await api.get(`/api/exercises/${exid}/similar`)
+    modal((box, close) => {
+      box.append(
+        el('h3', {}, `swap ${name}`),
+        el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'similar movements by muscle and equipment. machine taken? swap, don\'t wait.'))
+      if (!similar.length) {
+        box.append(empty('🔍', 'no similar movements in your library.'))
+        return
+      }
+      box.append(el('div', { class: 'list' }, ...similar.map(x =>
+        el('div', {
+          class: 'row-item interactive',
+          onclick: async () => {
+            close()
+            if (pending.some(p => p.id === x.id) || sets.some(s => s.exercise_id === x.id)) {
+              return toast(`${x.name} is already in this workout`, 'error')
+            }
+            pending = pending.map(p => p.id === exid ? { id: x.id, name: x.name, muscle: x.muscle } : p)
+            await loadhints()
+            renderbody()
+            toast(`swapped to ${x.name}`)
+          },
+        },
+          el('div', { class: 'grow' },
+            el('div', { class: 'title' }, x.name),
+            el('div', { class: 'meta' }, `${x.muscle} · ${x.equipment}`)),
+          el('span', { class: `badge ${x.difficulty}` }, x.difficulty)))))
+    })
   }
 
   function platecalc(initial) {

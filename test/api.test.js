@@ -216,6 +216,8 @@ test('week report aggregates', async () => {
   assert.ok('last_week' in r.data)
   assert.ok(r.data.nutrition.days_logged >= 1)
   assert.ok(Array.isArray(r.data.prs_this_week))
+  assert.equal(typeof r.data.deload.flagged, 'boolean')
+  assert.equal(r.data.deload.flagged, false)
 })
 
 test('exports csv', async () => {
@@ -366,6 +368,47 @@ test('imports exported csv round trip', async () => {
   const mine = await req('GET', '/api/workouts')
   assert.ok(mine.data.total >= 1)
   token = old
+})
+
+test('suggests similar exercises', async () => {
+  const r = await req('GET', '/api/exercises/1/similar')
+  assert.equal(r.status, 200)
+  assert.ok(r.data.similar.length >= 1)
+  assert.ok(r.data.similar.every(x => x.muscle === 'legs'))
+  assert.ok(r.data.similar.every(x => x.id !== 1))
+  assert.equal(r.data.similar[0].equipment, 'barbell')
+
+  const bogus = await req('GET', '/api/exercises/999999/similar')
+  assert.equal(bogus.status, 404)
+})
+
+test('flags a deload when weekly volume collapses', async () => {
+  const reg = await req('POST', '/api/auth/register', {
+    email: `deload${Date.now()}@fit.test`, password: 'secret1', name: 'deloader',
+  }, false)
+  const old = token
+  token = reg.data.token
+
+  const d = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10)
+  const rows = [['workout_id', 'workout', 'started', 'ended', 'exercise', 'muscle', 'weight_kg', 'reps', 'rpe']]
+  for (const back of [10, 14, 18, 21]) {
+    rows.push(['', `past ${back}`, `${d(back)} 10:00:00`, `${d(back)} 11:00:00`, 'bench press', 'chest', '100', '10', ''])
+  }
+  const imp = await req('POST', '/api/import/workouts', { csv: rows.map(r => r.join(',')).join('\n') })
+  assert.equal(imp.status, 201)
+  assert.equal(imp.data.workouts, 4)
+
+  const r = await req('GET', '/api/stats/report')
+  assert.equal(r.data.deload.flagged, true)
+  assert.ok(r.data.deload.baseline > 0)
+  token = old
+})
+
+test('food search requires a query', async () => {
+  const r = await req('GET', '/api/foods/search')
+  assert.equal(r.status, 400)
+  const blank = await req('GET', '/api/foods/search?q=%20')
+  assert.equal(blank.status, 400)
 })
 
 test('deletes an account and everything in it', async () => {

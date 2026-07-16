@@ -30,7 +30,7 @@ const mime = {
 function serve(req, res) {
   const url = new URL(req.url, 'http://x')
   let file = path.normalize(path.join(publicdir, url.pathname))
-  if (!file.startsWith(publicdir)) {
+  if (file !== publicdir && !file.startsWith(publicdir + path.sep)) {
     res.writeHead(403)
     return res.end()
   }

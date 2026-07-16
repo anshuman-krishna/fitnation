@@ -94,7 +94,10 @@ export async function progress() {
         ? el('p', { style: 'margin-top:14px;font-size:13.5px' },
             `🏆 new pr${r.prs_this_week.length > 1 ? 's' : ''} this week: `,
             el('b', { class: 'volt' }, r.prs_this_week.map(p => `${p.name} (${fmt.num1(showwt(p.weight))} ${wtunit()})`).join(', ')))
-        : el('p', { class: 'dim', style: 'margin-top:14px;font-size:13px' }, 'no new prs this week. chase one.'))
+        : el('p', { class: 'dim', style: 'margin-top:14px;font-size:13px' }, 'no new prs this week. chase one.'),
+      r.deload && r.deload.flagged && el('p', {
+        style: 'margin-top:10px;font-size:13.5px;color:var(--amber);font-weight:600',
+      }, `⚠ volume is down ${fmt.num((1 - r.this_week.volume / r.deload.baseline) * 100)}% vs your 3-week average (${fmt.num(showwt(r.deload.baseline))} ${wtunit()}/week). planned deload? enjoy it. unplanned? check sleep, food and schedule.`))
   }
 
   function build(volume, muscles, calories, prs, weights, report, me) {

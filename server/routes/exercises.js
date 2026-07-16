@@ -68,6 +68,19 @@ module.exports = app => {
     res.json(200, { ok: true })
   })
 
+  app.get('/api/exercises/:id/similar', authed, (req, res) => {
+    const ex = db.prepare('select * from exercises where id = ? and (user_id is null or user_id = ?)')
+      .get(req.params.id, req.user.id)
+    if (!ex) return res.json(404, { error: 'exercise not found' })
+    const similar = db.prepare(`
+      select * from exercises
+      where id != ? and muscle = ? and (user_id is null or user_id = ?)
+      order by (equipment = ?) desc, (difficulty = ?) desc, name
+      limit 6
+    `).all(ex.id, ex.muscle, req.user.id, ex.equipment, ex.difficulty)
+    res.json(200, { similar })
+  })
+
   app.get('/api/exercises/:id/history', authed, (req, res) => {
     const rows = db.prepare(`
       select s.weight, s.reps, s.rpe, s.created, w.started, w.name as workout_name

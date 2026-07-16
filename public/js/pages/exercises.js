@@ -110,7 +110,10 @@ export async function exercises() {
   }
 
   async function detail(x) {
-    const { history, pr } = await api.get(`/api/exercises/${x.id}/history`)
+    const [{ history, pr }, { similar }] = await Promise.all([
+      api.get(`/api/exercises/${x.id}/history`),
+      api.get(`/api/exercises/${x.id}/similar`).catch(() => ({ similar: [] })),
+    ])
     modal((box, close) => {
       box.append(
         el('div', { class: 'flex between' },
@@ -119,6 +122,16 @@ export async function exercises() {
         el('p', { class: 'muted', style: 'font-size:13px;margin-bottom:12px' }, `${x.muscle} · ${x.equipment}`),
         anatomy(x.muscle),
         el('p', { style: 'font-size:14px;margin:16px 0 20px' }, x.cues ? `💡 ${x.cues}` : ''))
+
+      if (similar.length) {
+        box.append(
+          el('div', { class: 'card-title', style: 'margin-bottom:8px' }, '⇄ swap it for'),
+          el('div', { class: 'flex wrap mb-16' }, ...similar.map(s =>
+            el('span', {
+              class: 'chip', title: `${s.equipment} · ${s.difficulty}`,
+              onclick: () => { close(); detail(s) },
+            }, s.name))))
+      }
 
       if (x.user_id) {
         box.append(el('button', {

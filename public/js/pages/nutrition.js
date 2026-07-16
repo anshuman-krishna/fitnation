@@ -172,6 +172,31 @@ export async function nutrition() {
         if (!matched.length) {
           list.replaceChildren(
             empty('🔍', 'not in the database.'),
+            el('button', { class: 'btn full mb-8', onclick: () => offsearch(q) }, `🌐 search open food facts for "${q}"`),
+            el('button', { class: 'btn full', onclick: () => customfood(q) }, `+ create "${q}"`))
+        }
+      }
+
+      async function offsearch(q) {
+        list.replaceChildren(spinner())
+        try {
+          const { results } = await api.get(`/api/foods/search?q=${encodeURIComponent(q)}`)
+          if (!results.length) {
+            list.replaceChildren(
+              empty('🌐', 'nothing found online either.'),
+              el('button', { class: 'btn full', onclick: () => customfood(q) }, `+ create "${q}"`))
+            return
+          }
+          list.replaceChildren(
+            el('p', { class: 'dim', style: 'font-size:12px;margin-bottom:8px' }, 'from open food facts · macros per 100 g'),
+            ...results.map(f =>
+              el('div', { class: 'row-item interactive', onclick: () => pickqty(f) },
+                el('div', { class: 'grow' },
+                  el('div', { class: 'title' }, f.name),
+                  el('div', { class: 'meta' }, `${f.serving} · ${fmt.num(f.cal)} kcal · ${fmt.num1(f.protein)} g protein`)))))
+        } catch (err) {
+          list.replaceChildren(
+            empty('⚠️', err.message),
             el('button', { class: 'btn full', onclick: () => customfood(q) }, `+ create "${q}"`))
         }
       }
@@ -188,7 +213,9 @@ export async function nutrition() {
             el('button', { class: 'btn ghost', onclick: () => close() }, 'cancel'),
             el('button', {
               class: 'btn primary', onclick: async () => {
-                await api.post('/api/meals', { food_id: f.id, qty: +qty.value || 1, slot, date })
+                let fid = f.id
+                if (!fid) fid = (await api.post('/api/foods', f)).food.id
+                await api.post('/api/meals', { food_id: fid, qty: +qty.value || 1, slot, date })
                 close()
                 toast(`${f.name} logged`)
                 load()

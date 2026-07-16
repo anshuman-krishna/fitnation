@@ -142,13 +142,43 @@ export async function profile() {
       el('button', { class: 'btn sm', onclick: () => file.click() }, label), file)
   }
 
+  function applehealthbtn() {
+    const file = el('input', { type: 'file', accept: '.xml,text/xml', style: 'display:none' })
+    file.addEventListener('change', async () => {
+      const f = file.files[0]
+      if (!f) return
+      try {
+        const xml = await f.text()
+        const days = new Map()
+        for (const [tag] of xml.matchAll(/<Record[^>]*type="HKQuantityTypeIdentifierBodyMass"[^>]*\/?>/g)) {
+          const unit = (tag.match(/unit="([^"]*)"/) || [])[1] || 'kg'
+          const value = +((tag.match(/value="([^"]*)"/) || [])[1] || 0)
+          const date = ((tag.match(/startDate="([^"]*)"/) || [])[1] || '').slice(0, 10)
+          if (!value || !date) continue
+          const kg = unit === 'lb' ? value / 2.2046226218 : unit === 'st' ? value * 6.35029318 : value
+          days.set(date, Math.round(kg * 100) / 100)
+        }
+        if (!days.size) return toast('no bodyweight records found in that file', 'error')
+        const csv = 'date,kg\n' + [...days.entries()].map(([d, kg]) => `${d},${kg}`).join('\n')
+        const res = await api.post('/api/import/weights', { csv })
+        toast(`imported ${res.imported} weigh-ins from apple health`)
+      } catch (err) {
+        toast(err.message, 'error')
+      }
+      file.value = ''
+    })
+    return el('span', {},
+      el('button', { class: 'btn sm', title: 'health app > profile picture > export all health data, then pick export.xml', onclick: () => file.click() }, '⬆ apple health'), file)
+  }
+
   const imports = el('div', { class: 'card mt-24' },
-    el('div', { class: 'card-title' }, 'restore from csv'),
-    el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'import files exported from fitnation. already-imported rows are skipped, so re-importing is safe.'),
+    el('div', { class: 'card-title' }, 'restore & import'),
+    el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'import fitnation csv exports, or bodyweight history from an apple health export (export.xml). already-imported rows are skipped, so re-importing is safe.'),
     el('div', { class: 'flex wrap' },
       importbtn('⬆ workouts', '/api/import/workouts', r => `imported ${r.workouts} workouts, ${r.sets} sets`),
       importbtn('⬆ bodyweight', '/api/import/weights', r => `imported ${r.imported} weigh-ins`),
-      importbtn('⬆ meals', '/api/import/meals', r => `imported ${r.imported} meals`)))
+      importbtn('⬆ meals', '/api/import/meals', r => `imported ${r.imported} meals`),
+      applehealthbtn()))
 
   function deleteaccount() {
     modal((box, close) => {

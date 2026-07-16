@@ -103,6 +103,16 @@ module.exports = app => {
     const thisweek = weekagg('-7 days', '+1 day')
     const lastweek = weekagg('-14 days', '-7 days')
 
+    const prior = db.prepare(`
+      select count(distinct w.id) as workouts, coalesce(sum(s.weight * s.reps), 0) / 3.0 as volume
+      from workouts w left join sets s on s.workout_id = w.id
+      where w.user_id = ? and w.started >= datetime('now', '-28 days') and w.started < datetime('now', '-7 days')
+    `).get(uid)
+    const deload = {
+      baseline: Math.round(prior.volume),
+      flagged: prior.workouts >= 3 && prior.volume > 0 && thisweek.volume < prior.volume * 0.6,
+    }
+
     const nutrition = db.prepare(`
       select count(*) as days_logged, coalesce(avg(cal), 0) as avg_cal,
         coalesce(avg(protein), 0) as avg_protein
@@ -132,6 +142,7 @@ module.exports = app => {
     res.json(200, {
       this_week: thisweek,
       last_week: lastweek,
+      deload,
       nutrition,
       weight: { latest: latest || null, previous: weekago || null },
       prs_this_week: prs,

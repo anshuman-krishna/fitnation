@@ -30,14 +30,25 @@ start it, train.
 - **exercise library.** 60+ curated movements with muscle targets, equipment
   tags, difficulty ratings and coaching cues, plus front/back muscle
   diagrams. add your own custom exercises too.
+- **exercise substitutions.** machine taken? every exercise suggests similar
+  movements by muscle and equipment, and unlogged exercises can be swapped
+  mid-session with one tap.
+- **share cards.** turn any finished workout into a shareable image: volume,
+  sets and top lifts on a clean dark card, rendered locally, no upload.
 - **nutrition tracking.** a fast food database with macros per serving. log
   meals by slot and watch calories, protein, carbs and fat fill up live.
   copy yesterday's meals per slot, or save a slot as a reusable recipe and
   log the whole thing with one tap.
+- **open food facts search.** if a food isn't in the local database, search
+  the open food facts catalog from the picker and log it; macros come in
+  per 100 g and the food is saved for next time.
 - **hydration.** tap a cup, stay on target.
 - **progress analytics.** volume trends, bodyweight curves, muscle-split
   donuts, estimated one-rep maxes, a personal record board, training
   streaks, 7-day rolling averages, and a week-in-review report.
+- **deload watch.** if this week's volume drops sharply below your 3-week
+  average, the week-in-review says so, whether it's a planned deload or a
+  slipping schedule.
 - **body measurements.** track waist, chest, arms and more, each with its
   own chart.
 - **metric or imperial.** switch anytime in your profile. your data is
@@ -47,7 +58,8 @@ start it, train.
 - **keyboard shortcuts.** press n to start a workout, / to search.
 - **your data is yours.** csv export of workouts, bodyweight and meals from
   the profile page, csv import to restore them, and full account deletion
-  when you want out.
+  when you want out. bodyweight history from an apple health export
+  (export.xml) imports too.
 - **installable pwa.** add it to your home screen. the app shell works
   offline and quick logs (and deletes) made without a connection sync when
   you're back.
@@ -90,10 +102,10 @@ data/       runtime sqlite database (gitignored)
 npm test
 ```
 
-28 integration tests spin up a real server on a throwaway database and
+31 integration tests spin up a real server on a throwaway database and
 drive the full api: auth, workouts, sets, supersets, templates, nutrition,
-recipes, measurements, stats, exports, imports, account deletion, and
-cross-user isolation.
+recipes, measurements, stats, deload detection, exercise substitutions,
+exports, imports, account deletion, and cross-user isolation.
 
 ## license
 
