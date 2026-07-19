@@ -349,6 +349,7 @@ export async function session(id) {
       })
       sets.push(res.set)
       pending = pending.filter(p => p.id !== exid)
+      if (res.pr) toast(`new ${group.name} pr. all-time best set 🏆`, 'pr')
       if (sets.length === 1) renderhead()
       startrest(exid)
       renderbody()

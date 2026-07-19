@@ -143,6 +143,15 @@ export async function profile() {
   }
 
   function applehealthbtn() {
+    const utc = s => {
+      if (!s) return null
+      const d = new Date(s)
+      return isNaN(d) ? null : d.toISOString().replace('T', ' ').slice(0, 19)
+    }
+    const activity = t => {
+      const n = (t || '').replace('HKWorkoutActivityType', '')
+      return n.replace(/([A-Z])/g, ' $1').trim().toLowerCase() || 'workout'
+    }
     const file = el('input', { type: 'file', accept: '.xml,text/xml', style: 'display:none' })
     file.addEventListener('change', async () => {
       const f = file.files[0]
@@ -158,10 +167,29 @@ export async function profile() {
           const kg = unit === 'lb' ? value / 2.2046226218 : unit === 'st' ? value * 6.35029318 : value
           days.set(date, Math.round(kg * 100) / 100)
         }
-        if (!days.size) return toast('no bodyweight records found in that file', 'error')
-        const csv = 'date,kg\n' + [...days.entries()].map(([d, kg]) => `${d},${kg}`).join('\n')
-        const res = await api.post('/api/import/weights', { csv })
-        toast(`imported ${res.imported} weigh-ins from apple health`)
+        const sessions = []
+        for (const [tag] of xml.matchAll(/<Workout [^>]*>/g)) {
+          const started = utc((tag.match(/startDate="([^"]*)"/) || [])[1])
+          if (!started) continue
+          sessions.push({
+            name: activity((tag.match(/workoutActivityType="([^"]*)"/) || [])[1]),
+            started,
+            ended: utc((tag.match(/endDate="([^"]*)"/) || [])[1]),
+          })
+        }
+        if (!days.size && !sessions.length) {
+          return toast('no bodyweight or workout records found in that file', 'error')
+        }
+        let weighins = 0
+        let workouts = 0
+        if (days.size) {
+          const csv = 'date,kg\n' + [...days.entries()].map(([d, kg]) => `${d},${kg}`).join('\n')
+          weighins = (await api.post('/api/import/weights', { csv })).imported
+        }
+        if (sessions.length) {
+          workouts = (await api.post('/api/import/sessions', { sessions: sessions.slice(0, 2000) })).imported
+        }
+        toast(`apple health: ${weighins} weigh-ins, ${workouts} workouts imported`)
       } catch (err) {
         toast(err.message, 'error')
       }
@@ -173,7 +201,7 @@ export async function profile() {
 
   const imports = el('div', { class: 'card mt-24' },
     el('div', { class: 'card-title' }, 'restore & import'),
-    el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'import fitnation csv exports, or bodyweight history from an apple health export (export.xml). already-imported rows are skipped, so re-importing is safe.'),
+    el('p', { class: 'muted mb-16', style: 'font-size:13.5px' }, 'import fitnation csv exports, or bodyweight and workout history from an apple health export (export.xml). already-imported rows are skipped, so re-importing is safe.'),
     el('div', { class: 'flex wrap' },
       importbtn('⬆ workouts', '/api/import/workouts', r => `imported ${r.workouts} workouts, ${r.sets} sets`),
       importbtn('⬆ bodyweight', '/api/import/weights', r => `imported ${r.imported} weigh-ins`),

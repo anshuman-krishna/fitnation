@@ -33,8 +33,13 @@ start it, train.
 - **exercise substitutions.** machine taken? every exercise suggests similar
   movements by muscle and equipment, and unlogged exercises can be swapped
   mid-session with one tap.
+- **live pr detection.** the moment a set beats your all-time best for that
+  exercise, the logger celebrates it. no digging through history to find out.
 - **share cards.** turn any finished workout into a shareable image: volume,
   sets and top lifts on a clean dark card, rendered locally, no upload.
+  your pr board and week-in-review share the same way.
+- **training year heatmap.** a 12-month calendar of every day you showed up,
+  shaded by volume. fill the squares.
 - **nutrition tracking.** a fast food database with macros per serving. log
   meals by slot and watch calories, protein, carbs and fat fill up live.
   copy yesterday's meals per slot, or save a slot as a reusable recipe and
@@ -42,6 +47,9 @@ start it, train.
 - **open food facts search.** if a food isn't in the local database, search
   the open food facts catalog from the picker and log it; macros come in
   per 100 g and the food is saved for next time.
+- **barcode scanning.** point your camera at a package in the food picker
+  and the product's macros come straight from open food facts. no camera
+  support? type the digits instead.
 - **hydration.** tap a cup, stay on target.
 - **progress analytics.** volume trends, bodyweight curves, muscle-split
   donuts, estimated one-rep maxes, a personal record board, training
@@ -58,11 +66,15 @@ start it, train.
 - **keyboard shortcuts.** press n to start a workout, / to search.
 - **your data is yours.** csv export of workouts, bodyweight and meals from
   the profile page, csv import to restore them, and full account deletion
-  when you want out. bodyweight history from an apple health export
-  (export.xml) imports too.
-- **installable pwa.** add it to your home screen. the app shell works
+  when you want out. bodyweight and workout history from an apple health
+  export (export.xml) import too.
+- **installable pwa.** add it to your home screen, with app shortcuts to
+  jump straight into a workout, a meal or a weigh-in. the app shell works
   offline and quick logs (and deletes) made without a connection sync when
   you're back.
+- **hardened by default.** strict input validation on every endpoint, login
+  throttling, and security headers (csp, nosniff, frame denial) on every
+  response.
 
 ## quick start
 
@@ -102,10 +114,11 @@ data/       runtime sqlite database (gitignored)
 npm test
 ```
 
-31 integration tests spin up a real server on a throwaway database and
+38 integration tests spin up a real server on a throwaway database and
 drive the full api: auth, workouts, sets, supersets, templates, nutrition,
 recipes, measurements, stats, deload detection, exercise substitutions,
-exports, imports, account deletion, and cross-user isolation.
+exports, imports, account deletion, cross-user isolation, input validation
+limits, login throttling, and security headers.
 
 ## license
 

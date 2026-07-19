@@ -1,5 +1,6 @@
 const db = require('../db')
 const { authed } = require('../middleware')
+const { text } = require('../validate')
 
 const parse = t => ({ ...t, data: JSON.parse(t.data) })
 
@@ -18,8 +19,11 @@ module.exports = app => {
   })
 
   app.post('/api/templates', authed, (req, res) => {
-    const name = (req.body.name || '').trim()
-    if (!name) return res.json(400, { error: 'name required' })
+    const name = text(req.body.name, 80)
+    if (!name) return res.json(400, { error: 'name required (80 characters max)' })
+    if (Array.isArray(req.body.exercises) && req.body.exercises.length > 50) {
+      return res.json(400, { error: 'templates cap at 50 exercises' })
+    }
 
     let data = []
     if (req.body.workout_id) {
@@ -48,11 +52,12 @@ module.exports = app => {
     const t = db.prepare('select * from templates where id = ? and user_id = ?')
       .get(req.params.id, req.user.id)
     if (!t) return res.json(404, { error: 'template not found' })
-    const name = req.body.name !== undefined ? (req.body.name || '').trim() : t.name
-    if (!name) return res.json(400, { error: 'name required' })
+    const name = req.body.name !== undefined ? text(req.body.name, 80) : t.name
+    if (!name) return res.json(400, { error: 'name required (80 characters max)' })
     let data = JSON.parse(t.data)
     if (Array.isArray(req.body.exercises)) {
       if (!req.body.exercises.length) return res.json(400, { error: 'template needs at least one exercise' })
+      if (req.body.exercises.length > 50) return res.json(400, { error: 'templates cap at 50 exercises' })
       const marks = req.body.exercises.map(() => '?').join(',')
       const rows = db.prepare(`select id, name, muscle from exercises where id in (${marks})`)
         .all(...req.body.exercises.map(Number))

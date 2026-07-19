@@ -1,8 +1,9 @@
 import { el, fmt, spinner, empty, toast, modal } from '../ui.js'
 import { api } from '../api.js'
 import { store } from '../store.js'
-import { linechart, barchart, donut } from '../charts.js'
+import { linechart, barchart, donut, heatmap } from '../charts.js'
 import { wtunit, showwt, inkg, lenunit, showlen, incm } from '../units.js'
+import { prcard, weekcard } from '../share.js'
 
 const musclecolors = ['var(--volt)', 'var(--sky)', 'var(--rose)', 'var(--violet)', 'var(--amber)', 'var(--ember)', 'var(--success)']
 
@@ -40,7 +41,7 @@ export async function progress() {
   load()
   async function load() {
     try {
-      const [vol, muscles, cals, prs, weights, report, me] = await Promise.all([
+      const [vol, muscles, cals, prs, weights, report, me, year] = await Promise.all([
         api.get('/api/stats/volume?days=60'),
         api.get('/api/stats/muscles'),
         api.get('/api/stats/calories?days=14'),
@@ -48,8 +49,9 @@ export async function progress() {
         api.get('/api/weights'),
         api.get('/api/stats/report'),
         api.get('/api/measurements'),
+        api.get('/api/stats/volume?days=365'),
       ])
-      body.replaceChildren(build(vol.volume, muscles.muscles, cals.calories, prs.prs, weights.weights, report, me))
+      body.replaceChildren(build(vol.volume, muscles.muscles, cals.calories, prs.prs, weights.weights, report, me, year.volume))
     } catch (err) {
       body.replaceChildren(empty('⚠️', err.message))
     }
@@ -68,7 +70,12 @@ export async function progress() {
       ? showwt(r.weight.latest.kg) - showwt(r.weight.previous.kg)
       : null
     return el('div', { class: 'card mb-16' },
-      el('div', { class: 'card-title' }, '📋 week in review · last 7 days'),
+      el('div', { class: 'card-title' },
+        el('span', {}, '📋 week in review · last 7 days'),
+        el('button', {
+          class: 'icon-btn', title: 'share your week as an image',
+          onclick: () => weekcard(r),
+        }, '⇪')),
       el('div', { class: 'grid cols-4' },
         el('div', {},
           el('div', { class: 'label muted', style: 'font-size:11px;text-transform:uppercase;letter-spacing:0.05em' }, 'workouts'),
@@ -100,10 +107,11 @@ export async function progress() {
       }, `⚠ volume is down ${fmt.num((1 - r.this_week.volume / r.deload.baseline) * 100)}% vs your 3-week average (${fmt.num(showwt(r.deload.baseline))} ${wtunit()}/week). planned deload? enjoy it. unplanned? check sleep, food and schedule.`))
   }
 
-  function build(volume, muscles, calories, prs, weights, report, me) {
+  function build(volume, muscles, calories, prs, weights, report, me, year) {
     const wrap = el('div', {})
 
     wrap.append(reviewcard(report))
+    wrap.append(heatcard(year))
 
     const volbydate = new Map(volume.map(v => [v.date, v.volume]))
     const volpoints = lastdays(60).map(d => ({ label: fmt.date(d), value: Math.round(showwt(volbydate.get(d) || 0)) }))
@@ -153,10 +161,15 @@ export async function progress() {
 
     wrap.append(el('div', { class: 'grid cols-2 mb-16' }, musclesplit, calcard))
 
-    const prcard = el('div', { class: 'card' },
-      el('div', { class: 'card-title' }, '🏆 personal record board'))
+    const prboard = el('div', { class: 'card' },
+      el('div', { class: 'card-title' },
+        el('span', {}, '🏆 personal record board'),
+        prs.length > 0 && el('button', {
+          class: 'icon-btn', title: 'share your pr board as an image',
+          onclick: () => prcard(prs),
+        }, '⇪')))
     if (prs.length) {
-      prcard.append(el('div', { class: 'table-wrap' },
+      prboard.append(el('div', { class: 'table-wrap' },
         el('table', { class: 'data' },
           el('thead', {}, el('tr', {},
             el('th', {}, 'exercise'), el('th', {}, 'muscle'),
@@ -170,13 +183,26 @@ export async function progress() {
               el('td', { class: 'volt', style: 'font-weight:700' }, `${fmt.num1(showwt(p.est_1rm))} ${wtunit()}`),
               el('td', { class: 'muted' }, String(p.total_sets))))))))
     } else {
-      prcard.append(empty('🏆', 'lift heavy things to earn a spot on the board.'))
+      prboard.append(empty('🏆', 'lift heavy things to earn a spot on the board.'))
     }
-    wrap.append(prcard)
+    wrap.append(prboard)
 
     wrap.append(mecard(me.measurements, me.kinds))
 
     return wrap
+  }
+
+  function heatcard(year) {
+    const rows = year.map(v => ({ date: v.date, volume: Math.round(showwt(v.volume)), workouts: v.workouts }))
+    const active = rows.filter(r => r.workouts > 0).length
+    return el('div', { class: 'card mb-16' },
+      el('div', { class: 'card-title' },
+        el('span', {}, '🗓 training year'),
+        el('span', { class: 'dim', style: 'font-size:12px;font-weight:600' },
+          `${active} active day${active === 1 ? '' : 's'} in the last 12 months`)),
+      active
+        ? heatmap(rows, { unit: ` ${wtunit()}` })
+        : empty('🗓', 'every square you fill is a day you showed up.'))
   }
 
   function mecard(measurements, kinds) {

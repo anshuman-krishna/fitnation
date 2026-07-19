@@ -15,7 +15,7 @@ export function el(tag, attrs = {}, ...children) {
 
 export function toast(message, type = 'success') {
   const root = document.getElementById('toasts')
-  const icons = { success: '✓', error: '✕', info: 'ℹ' }
+  const icons = { success: '✓', error: '✕', info: 'ℹ', pr: '🏆' }
   const node = el('div', { class: `toast ${type}` },
     el('span', { class: 'volt' }, icons[type] || ''),
     message)

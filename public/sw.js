@@ -1,4 +1,4 @@
-const version = 'fitnation-v5'
+const version = 'fitnation-v6'
 const core = [
   '/', '/css/main.css', '/manifest.json', '/icon.svg',
   '/js/app.js', '/js/api.js', '/js/store.js', '/js/ui.js', '/js/charts.js',

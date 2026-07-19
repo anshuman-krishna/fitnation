@@ -1,5 +1,6 @@
 const db = require('../db')
 const { authed } = require('../middleware')
+const { text, num, dateish, datetimeish } = require('../validate')
 
 function parsecsv(text) {
   const rows = []
@@ -22,8 +23,8 @@ function parsecsv(text) {
 }
 
 function records(csv, required) {
-  const rows = parsecsv(csv || '')
-  if (rows.length < 2) return null
+  const rows = parsecsv(typeof csv === 'string' ? csv : '')
+  if (rows.length < 2 || rows.length > 10001) return null
   const header = rows[0].map(h => h.trim().toLowerCase())
   if (!required.every(c => header.includes(c))) return null
   return rows.slice(1).map(r => Object.fromEntries(header.map((h, i) => [h, (r[i] || '').trim()])))
@@ -35,8 +36,8 @@ module.exports = app => {
     if (!rows) return res.json(400, { error: 'expected csv with date,kg columns' })
     let imported = 0
     for (const r of rows) {
-      const kg = +r.kg
-      if (!r.date || !kg || kg <= 0 || kg > 500) continue
+      const kg = num(r.kg, 1, 500)
+      if (!dateish(r.date) || kg === undefined) continue
       const existing = db.prepare('select id from weights where user_id = ? and date = ?')
         .get(req.user.id, r.date)
       if (existing) db.prepare('update weights set kg = ? where id = ?').run(kg, existing.id)
@@ -52,9 +53,9 @@ module.exports = app => {
     const slots = ['breakfast', 'lunch', 'dinner', 'snack']
     let imported = 0
     for (const r of rows) {
-      const qty = +r.qty || 1
-      const name = (r.food || '').toLowerCase()
-      if (!r.date || !name) continue
+      const qty = num(r.qty, 0.05, 100) ?? 1
+      const name = text((r.food || '').toLowerCase(), 80)
+      if (!dateish(r.date) || !name) continue
       let food = db.prepare('select id from foods where name = ?').get(name)
       if (!food) {
         const info = db.prepare('insert into foods (name, cal, protein, carbs, fat, serving) values (?, ?, ?, ?, ?, ?)')
@@ -79,13 +80,20 @@ module.exports = app => {
     const groups = new Map()
     for (const r of rows) {
       const key = `${r.workout_id || r.workout}|${r.started}`
-      if (!groups.has(key)) groups.set(key, { name: r.workout || 'workout', started: r.started, ended: r.ended || null, sets: [] })
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name: text(r.workout, 80) ?? 'workout',
+          started: r.started,
+          ended: datetimeish(r.ended) ? r.ended : null,
+          sets: [],
+        })
+      }
       if (r.exercise) groups.get(key).sets.push(r)
     }
     let workouts = 0
     let sets = 0
     for (const g of groups.values()) {
-      if (!g.started) continue
+      if (!datetimeish(g.started)) continue
       const dupe = db.prepare('select id from workouts where user_id = ? and name = ? and started = ?')
         .get(req.user.id, g.name, g.started)
       if (dupe) continue
@@ -94,7 +102,8 @@ module.exports = app => {
       workouts++
       const ins = db.prepare('insert into sets (workout_id, exercise_id, weight, reps, rpe, created) values (?, ?, ?, ?, ?, ?)')
       for (const s of g.sets) {
-        const name = s.exercise.toLowerCase()
+        const name = text(s.exercise.toLowerCase(), 80)
+        if (!name) continue
         let ex = db.prepare('select id from exercises where name = ? and (user_id is null or user_id = ?)')
           .get(name, req.user.id)
         if (!ex) {
@@ -102,10 +111,30 @@ module.exports = app => {
             .run(name, s.muscle || 'full body', 'other', 'beginner', '', req.user.id)
           ex = { id: created.lastInsertRowid }
         }
-        ins.run(info.lastInsertRowid, ex.id, +s.weight_kg || 0, +s.reps || 0, s.rpe ? +s.rpe : null, g.started)
+        ins.run(info.lastInsertRowid, ex.id, num(s.weight_kg, 0, 1000) ?? 0, num(s.reps, 0, 1000) ?? 0,
+          num(s.rpe, 1, 10) ?? null, g.started)
         sets++
       }
     }
     res.json(201, { workouts, sets })
+  })
+
+  app.post('/api/import/sessions', authed, (req, res) => {
+    const list = Array.isArray(req.body.sessions) ? req.body.sessions : null
+    if (!list || !list.length || list.length > 2000) {
+      return res.json(400, { error: 'expected sessions: [{ name, started, ended }] (max 2000)' })
+    }
+    const dupe = db.prepare('select id from workouts where user_id = ? and name = ? and started = ?')
+    const ins = db.prepare('insert into workouts (user_id, name, started, ended) values (?, ?, ?, ?)')
+    let imported = 0
+    for (const s of list) {
+      if (!s || !datetimeish(s.started)) continue
+      const name = text(s.name, 80) ?? 'workout'
+      const ended = datetimeish(s.ended) ? s.ended : null
+      if (dupe.get(req.user.id, name, s.started)) continue
+      ins.run(req.user.id, name, s.started, ended)
+      imported++
+    }
+    res.json(201, { imported })
   })
 }

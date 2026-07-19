@@ -155,10 +155,11 @@ export async function nutrition() {
       api.get('/api/foods'),
       api.get('/api/recipes').catch(() => ({ recipes: [] })),
     ])
+    let stopscan = () => {}
     modal((box, close) => {
       const list = el('div', { class: 'list', style: 'max-height:40vh;overflow-y:auto' })
       const search = el('input', {
-        class: 'input mb-16', placeholder: 'search foods…',
+        class: 'input', placeholder: 'search foods…',
         oninput: () => draw(search.value.toLowerCase()),
       })
 
@@ -225,6 +226,85 @@ export async function nutrition() {
         qty.select()
       }
 
+      function scanui() {
+        stopscan()
+        box.replaceChildren(el('h3', {}, 'scan a barcode'))
+        const video = el('video', {
+          autoplay: '', muted: '', playsinline: '',
+          style: 'width:100%;max-height:44vh;border-radius:14px;background:#000;object-fit:cover',
+        })
+        const status = el('p', { class: 'dim', style: 'font-size:13px;margin-top:10px' }, 'point your camera at the barcode.')
+        box.append(video, status, el('div', { class: 'modal-actions' },
+          el('button', { class: 'btn ghost', onclick: () => { stopscan(); close() } }, 'cancel'),
+          el('button', { class: 'btn', onclick: () => { stopscan(); manualui() } }, 'type it instead')))
+        start()
+        async function start() {
+          if (!('BarcodeDetector' in window) || !navigator.mediaDevices) {
+            status.textContent = 'this browser cannot scan. type the code instead.'
+            return
+          }
+          let stream
+          let detector
+          try {
+            detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] })
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+          } catch {
+            status.textContent = 'camera unavailable or blocked. type the code instead.'
+            return
+          }
+          video.srcObject = stream
+          const poll = setInterval(async () => {
+            try {
+              const codes = await detector.detect(video)
+              if (codes.length && /^\d{6,14}$/.test(codes[0].rawValue)) {
+                stopscan()
+                lookup(codes[0].rawValue)
+              }
+            } catch {}
+          }, 350)
+          stopscan = () => {
+            clearInterval(poll)
+            stream.getTracks().forEach(t => t.stop())
+            stopscan = () => {}
+          }
+        }
+      }
+
+      function manualui() {
+        box.replaceChildren(el('h3', {}, 'enter barcode'))
+        const code = el('input', {
+          class: 'input', type: 'text', inputmode: 'numeric',
+          placeholder: 'the digits under the bars',
+        })
+        code.addEventListener('keydown', e => { if (e.key === 'Enter') go() })
+        function go() {
+          const c = code.value.replace(/\D/g, '')
+          if (c.length < 6 || c.length > 14) return toast('that does not look like a barcode', 'error')
+          lookup(c)
+        }
+        box.append(
+          el('div', { class: 'field' }, el('label', {}, 'barcode number'), code),
+          el('div', { class: 'modal-actions' },
+            el('button', { class: 'btn ghost', onclick: () => close() }, 'cancel'),
+            el('button', { class: 'btn primary', onclick: go }, 'look it up')))
+        setTimeout(() => code.focus(), 50)
+      }
+
+      async function lookup(c) {
+        box.replaceChildren(el('h3', {}, 'looking it up…'), spinner())
+        try {
+          const { food } = await api.get(`/api/foods/barcode/${c}`)
+          pickqty(food)
+        } catch (err) {
+          box.replaceChildren(
+            el('h3', {}, 'no luck'),
+            empty('📷', err.message),
+            el('div', { class: 'modal-actions' },
+              el('button', { class: 'btn ghost', onclick: () => close() }, 'close'),
+              el('button', { class: 'btn primary', onclick: scanui }, 'scan again')))
+        }
+      }
+
       function customfood(name) {
         box.replaceChildren(el('h3', {}, 'new food'))
         const inputs = {}
@@ -280,9 +360,13 @@ export async function nutrition() {
                   },
                 }, '✕')))))
         : ''
-      box.append(el('h3', {}, `add to ${slot}`), recipebox, search, list)
+      box.append(el('h3', {}, `add to ${slot}`), recipebox,
+        el('div', { class: 'flex mb-16', style: 'gap:8px' },
+          el('div', { class: 'grow' }, search),
+          el('button', { class: 'icon-btn', title: 'scan a barcode', style: 'font-size:18px', onclick: scanui }, '📷')),
+        list)
       setTimeout(() => search.focus(), 50)
-    })
+    }, { onclose: () => stopscan() })
   }
 
   return page

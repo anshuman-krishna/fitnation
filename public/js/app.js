@@ -14,8 +14,15 @@ import { nutrition } from './pages/nutrition.js'
 import { progress } from './pages/progress.js'
 import { profile } from './pages/profile.js'
 
+async function quickstart() {
+  const res = await api.post('/api/workouts', { name: 'workout' })
+  location.hash = `#/workouts/${res.workout.id}`
+  return el('div', { class: 'page' })
+}
+
 const routes = [
   { path: /^\/$/, page: landing, public: true, bare: true },
+  { path: /^\/start$/, page: quickstart, nav: 'workouts' },
   { path: /^\/login$/, page: () => authpage('login'), public: true, bare: true },
   { path: /^\/register$/, page: () => authpage('register'), public: true, bare: true },
   { path: /^\/dashboard$/, page: dashboard, nav: 'dashboard' },

@@ -1,6 +1,14 @@
 const { decode } = require('./auth')
 
+const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+  "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+
 function decorate(req, res) {
+  res.setHeader('x-content-type-options', 'nosniff')
+  res.setHeader('x-frame-options', 'DENY')
+  res.setHeader('referrer-policy', 'no-referrer')
+  res.setHeader('permissions-policy', 'geolocation=(), microphone=()')
+  res.setHeader('content-security-policy', csp)
   res.json = (status, data) => {
     res.writeHead(status, { 'content-type': 'application/json' })
     res.end(JSON.stringify(data))

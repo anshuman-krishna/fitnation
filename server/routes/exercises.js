@@ -1,5 +1,6 @@
 const db = require('../db')
 const { authed } = require('../middleware')
+const { text, optext } = require('../validate')
 
 const muscles = ['chest', 'back', 'lats', 'lower back', 'shoulders', 'biceps', 'triceps',
   'legs', 'quads', 'hamstrings', 'glutes', 'calves', 'core', 'full body', 'cardio']
@@ -45,16 +46,18 @@ module.exports = app => {
   })
 
   app.post('/api/exercises', authed, (req, res) => {
-    const name = (req.body.name || '').trim().toLowerCase()
-    if (!name) return res.json(400, { error: 'name required' })
+    const name = text(typeof req.body.name === 'string' ? req.body.name.toLowerCase() : '', 80)
+    if (!name) return res.json(400, { error: 'name required (80 characters max)' })
     const muscle = muscles.includes(req.body.muscle) ? req.body.muscle : 'full body'
     const difficulty = difficulties.includes(req.body.difficulty) ? req.body.difficulty : 'beginner'
-    const equipment = (req.body.equipment || 'other').trim().toLowerCase()
+    const equipment = optext(typeof req.body.equipment === 'string' ? req.body.equipment.toLowerCase() : '', 40, 'other')
+    const cues = optext(req.body.cues, 500, '')
+    if (equipment === undefined || cues === undefined) return res.json(400, { error: 'equipment max 40 chars, cues max 500' })
     const dupe = db.prepare('select id from exercises where name = ? and (user_id is null or user_id = ?)')
       .get(name, req.user.id)
     if (dupe) return res.json(409, { error: 'exercise already exists' })
     const info = db.prepare('insert into exercises (name, muscle, equipment, difficulty, cues, user_id) values (?, ?, ?, ?, ?, ?)')
-      .run(name, muscle, equipment, difficulty, (req.body.cues || '').trim(), req.user.id)
+      .run(name, muscle, equipment, difficulty, cues, req.user.id)
     res.json(201, { exercise: db.prepare('select * from exercises where id = ?').get(info.lastInsertRowid) })
   })
 

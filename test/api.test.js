@@ -411,6 +411,82 @@ test('food search requires a query', async () => {
   assert.equal(blank.status, 400)
 })
 
+test('sends security headers on every response', async () => {
+  for (const p of ['/', '/api/stats/prs']) {
+    const res = await fetch(base + p, { headers: token && p.startsWith('/api') ? { authorization: `Bearer ${token}` } : {} })
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+    assert.equal(res.headers.get('x-frame-options'), 'DENY')
+    assert.ok(res.headers.get('content-security-policy').includes("default-src 'self'"))
+  }
+})
+
+test('rejects out-of-range and oversize input', async () => {
+  const longname = 'x'.repeat(200)
+  assert.equal((await req('POST', '/api/workouts', { name: longname })).status, 400)
+  assert.equal((await req('POST', `/api/workouts/${workout_id}/sets`, { exercise_id: 1, weight: 5000, reps: 5 })).status, 400)
+  assert.equal((await req('POST', `/api/workouts/${workout_id}/sets`, { exercise_id: 1, weight: 100, reps: 5, rpe: 30 })).status, 400)
+  assert.equal((await req('POST', '/api/water', { ml: 50000 })).status, 400)
+  assert.equal((await req('POST', '/api/meals', { food_id: 1, qty: 5000 })).status, 400)
+  assert.equal((await req('POST', '/api/meals', { food_id: 1, qty: 1, date: '07/20/2026' })).status, 400)
+  assert.equal((await req('POST', '/api/weights', { kg: 900 })).status, 400)
+  assert.equal((await req('PATCH', '/api/auth/me', { goal_cal: 50 })).status, 400)
+  assert.equal((await req('PATCH', '/api/auth/me', { units: 'stone' })).status, 400)
+  assert.equal((await req('POST', '/api/auth/register', { email: 'cap@fit.test', password: 'secret1', name: longname }, false)).status, 400)
+})
+
+test('locks out repeated failed logins', async () => {
+  const email = `locked${Date.now()}@fit.test`
+  await req('POST', '/api/auth/register', { email, password: 'secret1', name: 'locked out' }, false)
+  let last
+  for (let i = 0; i < 9; i++) {
+    last = await req('POST', '/api/auth/login', { email, password: 'wrong' }, false)
+  }
+  assert.equal(last.status, 429)
+  const evenright = await req('POST', '/api/auth/login', { email, password: 'secret1' }, false)
+  assert.equal(evenright.status, 429)
+})
+
+test('flags a pr only when beating existing history', async () => {
+  const w = await req('POST', '/api/workouts', { name: 'pr day' })
+  const wid = w.data.workout.id
+  const first = await req('POST', `/api/workouts/${wid}/sets`, { exercise_id: 4, weight: 60, reps: 5 })
+  assert.equal(first.data.pr, false)
+  const better = await req('POST', `/api/workouts/${wid}/sets`, { exercise_id: 4, weight: 70, reps: 5 })
+  assert.equal(better.data.pr, true)
+  const worse = await req('POST', `/api/workouts/${wid}/sets`, { exercise_id: 4, weight: 50, reps: 5 })
+  assert.equal(worse.data.pr, false)
+  await req('DELETE', `/api/workouts/${wid}`)
+})
+
+test('imports set-free sessions with dedupe', async () => {
+  const sessions = [
+    { name: 'traditional strength training', started: '2026-07-01 10:00:00', ended: '2026-07-01 11:00:00' },
+    { name: 'running', started: '2026-07-02 08:00:00', ended: null },
+    { name: 'bad row', started: 'yesterday-ish' },
+  ]
+  const r = await req('POST', '/api/import/sessions', { sessions })
+  assert.equal(r.status, 201)
+  assert.equal(r.data.imported, 2)
+  const again = await req('POST', '/api/import/sessions', { sessions })
+  assert.equal(again.data.imported, 0)
+  const bad = await req('POST', '/api/import/sessions', { sessions: [] })
+  assert.equal(bad.status, 400)
+})
+
+test('validates barcode lookups', async () => {
+  const r = await req('GET', '/api/foods/barcode/notdigits')
+  assert.equal(r.status, 400)
+  const short = await req('GET', '/api/foods/barcode/12')
+  assert.equal(short.status, 400)
+})
+
+test('caps csv imports at 10000 rows', async () => {
+  const rows = ['date,kg']
+  for (let i = 0; i < 10001; i++) rows.push('2020-01-01,80')
+  const r = await req('POST', '/api/import/weights', { csv: rows.join('\n') })
+  assert.equal(r.status, 400)
+})
+
 test('deletes an account and everything in it', async () => {
   const email = `bye${Date.now()}@fit.test`
   const reg = await req('POST', '/api/auth/register', { email, password: 'secret1', name: 'leaver' }, false)

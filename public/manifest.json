@@ -9,5 +9,25 @@
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "start a workout",
+      "short_name": "start",
+      "url": "/#/start",
+      "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "log a meal",
+      "short_name": "meal",
+      "url": "/#/nutrition",
+      "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "log a weigh-in",
+      "short_name": "weigh-in",
+      "url": "/#/progress",
+      "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
   ]
 }

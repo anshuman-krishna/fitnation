@@ -164,6 +164,67 @@ export function barchart(points, { color = 'var(--sky)', height = 200, unit = ''
   return box
 }
 
+export function heatmap(rows, { unit = '' } = {}) {
+  const box = el('div', { class: 'chart-box', style: 'overflow-x:auto' })
+  const byday = new Map(rows.map(r => [r.date, r]))
+  const cell = 11
+  const gap = 3
+  const step = cell + gap
+  const top = 18
+
+  const today = new Date()
+  const start = new Date(today.getTime() - 363 * 86400000)
+  while (start.getUTCDay() !== 1) start.setUTCDate(start.getUTCDate() - 1)
+  const days = []
+  for (const d = new Date(start); d <= today; d.setUTCDate(d.getUTCDate() + 1)) days.push(new Date(d))
+
+  const vols = rows.filter(r => r.volume > 0).map(r => r.volume).sort((a, b) => a - b)
+  const q = p => vols.length ? vols[Math.min(vols.length - 1, Math.floor(p * vols.length))] : 0
+  const t = [q(0.25), q(0.5), q(0.75)]
+  const level = v => v <= 0 ? 0 : v <= t[0] ? 1 : v <= t[1] ? 2 : v <= t[2] ? 3 : 4
+  const opacity = [0, 0.22, 0.45, 0.7, 1]
+
+  const cols = Math.ceil(days.length / 7)
+  const w = cols * step - gap
+  const h = top + 7 * step - gap
+  const svg = svgel('svg', { viewBox: `0 0 ${w} ${h}`, style: 'width:100%;min-width:560px;height:auto' })
+
+  let lastmonth = -1
+  days.forEach((d, i) => {
+    const col = Math.floor(i / 7)
+    const row = (d.getUTCDay() + 6) % 7
+    const iso = d.toISOString().slice(0, 10)
+    const entry = byday.get(iso)
+    const v = entry ? entry.volume : 0
+    const lv = entry && entry.workouts > 0 ? Math.max(1, level(v)) : level(v)
+    const rect = svgel('rect', {
+      x: col * step, y: top + row * step, width: cell, height: cell, rx: 3,
+      fill: lv === 0 ? 'var(--border)' : 'var(--volt)',
+      'fill-opacity': lv === 0 ? 0.55 : opacity[lv],
+    })
+    rect.addEventListener('mousemove', e => {
+      const label = d.toLocaleDateString('en', { month: 'short', day: 'numeric' })
+      showtip(e.clientX, e.clientY, entry
+        ? `<b>${v.toLocaleString()}${unit}</b> · ${entry.workouts} workout${entry.workouts === 1 ? '' : 's'} · ${label}`
+        : `<b>rest day</b> · ${label}`)
+    })
+    rect.addEventListener('mouseleave', hidetip)
+    svg.append(rect)
+
+    if (row === 0 && d.getUTCMonth() !== lastmonth) {
+      if (lastmonth !== -1) {
+        const label = svgel('text', { x: col * step, y: 11, fill: 'var(--dim)', 'font-size': 10 })
+        label.textContent = d.toLocaleDateString('en', { month: 'short' }).toLowerCase()
+        svg.append(label)
+      }
+      lastmonth = d.getUTCMonth()
+    }
+  })
+
+  box.append(svg)
+  return box
+}
+
 export function donut(slices, { size = 170, hole = 0.66 } = {}) {
   const box = el('div', { class: 'chart-box', style: `max-width:${size}px;margin:0 auto` })
   const total = slices.reduce((s, x) => s + x.value, 0)

@@ -1,5 +1,6 @@
 const db = require('../db')
 const { authed } = require('../middleware')
+const { num, day } = require('../validate')
 
 module.exports = app => {
   app.get('/api/weights', authed, (req, res) => {
@@ -9,9 +10,10 @@ module.exports = app => {
   })
 
   app.post('/api/weights', authed, (req, res) => {
-    const kg = +req.body.kg
-    if (!kg || kg <= 0 || kg > 500) return res.json(400, { error: 'valid weight required' })
-    const date = req.body.date || new Date().toISOString().slice(0, 10)
+    const kg = num(req.body.kg, 1, 500)
+    if (kg === undefined) return res.json(400, { error: 'valid weight required (1-500 kg)' })
+    const date = day(req.body.date)
+    if (!date) return res.json(400, { error: 'invalid date' })
     const existing = db.prepare('select id from weights where user_id = ? and date = ?')
       .get(req.user.id, date)
     if (existing) {
@@ -43,11 +45,12 @@ module.exports = app => {
   })
 
   app.post('/api/measurements', authed, (req, res) => {
-    const { kind, value } = req.body
+    const { kind } = req.body
     if (!kinds.includes(kind)) return res.json(400, { error: 'invalid measurement kind' })
-    const v = +value
-    if (!v || v <= 0 || v > 500) return res.json(400, { error: 'valid value required (cm)' })
-    const date = req.body.date || new Date().toISOString().slice(0, 10)
+    const v = num(req.body.value, 1, 500)
+    if (v === undefined) return res.json(400, { error: 'valid value required (1-500 cm)' })
+    const date = day(req.body.date)
+    if (!date) return res.json(400, { error: 'invalid date' })
     const existing = db.prepare('select id from measurements where user_id = ? and kind = ? and date = ?')
       .get(req.user.id, kind, date)
     if (existing) {
